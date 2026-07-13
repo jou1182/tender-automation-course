@@ -1,0 +1,20 @@
+{
+    "portal_url": "https://your-portal.example.com",
+    "login_path": "/ar/login/",
+    "export_path": "/ar/tendering/export_to_excel_in_progress_tender/",
+    "dashboard_indicator": "/tendering_main_index",
+    "selectors": {
+        "username_field": {
+            "by": "name",
+            "value": "username"
+        },
+        "password_field": {
+            "by": "name",
+            "value": "password"
+        },
+        "submit_button": {
+            "by": "xpath",
+            "value": "//button[@type='submit']"
+        }
+    }
+}

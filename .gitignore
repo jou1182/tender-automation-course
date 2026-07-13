@@ -1,0 +1,29 @@
+# Secrets — NEVER commit
+.env
+*.env
+!.env.example
+vault.key
+.dashboard_secret
+portal_cookies.json
+ssh_id_rsa
+tenants_registry.json
+
+# Live/company-specific identity (each learner makes their own)
+# company_profile.json  # (kept as generic sample here; learners edit it)
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# Data & logs
+*.db
+*.sqlite
+output/
+logs/
+*.xlsx
+
+# OS
+.DS_Store
+desktop.ini

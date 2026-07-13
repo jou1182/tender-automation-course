@@ -1,0 +1,35 @@
+{
+  "_comment": "ملف هوية الشركة — عدّله لشركتك. هذا مثال تعليمي بقيم عامة.",
+  "name_ar": "شركة المقاولات النموذجية",
+  "name_en": "SAMPLE CONTRACTING",
+  "short_ar": "النموذجية",
+  "system_title": "نظام متابعة المناقصات",
+  "system_subtitle": "لوحة متابعة المنافسات",
+  "team_ar": "فريق العروض الفنية",
+  "department_ar": "قسم العروض الفنية",
+  "portal_url": "https://your-portal.example.com",
+  "portal_export_path": "/path/to/export",
+  "portal_cookie_domain": ".example.com",
+  "footer_owner": "Your Name",
+  "footer_url": "https://example.com",
+  "ai_scope_ar": "المناقصات الحكومية ومنصة الشركة",
+  "portal_adapter": "default",
+  "theme_bg": "#b88800",
+  "theme_card": "#fffde8",
+  "theme_hover": "#fdf5c0",
+  "theme_head": "#f5e870",
+  "theme_primary": "#8a4800",
+  "theme_primary_l": "#b86a00",
+  "theme_primary_d": "#5e2e00",
+  "engineers": [
+    {
+      "name": "مهندس 1",
+      "capacity": 5
+    },
+    {
+      "name": "مهندس 2",
+      "capacity": 5
+    }
+  ],
+  "_adapter_note": "غيّر portal_adapter لاسم محوّل منصتك بعد بنائه في portal_adapter.py"
+}
