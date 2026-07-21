@@ -39,10 +39,13 @@ LOGIN_HTML = """<!DOCTYPE html>
 {% if expired %}<div style="background:rgba(184,106,0,.12);border:1px solid rgba(184,106,0,.4);color:#8a4800;
   border-radius:9px;padding:.6rem .9rem;font-size:.85rem;font-weight:700;margin-bottom:.8rem;text-align:center">
   ⏳ انتهت الجلسة لعدم النشاط لأكثر من ساعتين — فضلاً سجّل الدخول من جديد</div>{% endif %}
+{% if reset_ok %}<div style="background:rgba(26,107,60,.08);border:1px solid rgba(26,107,60,.3);color:#1a6b3c;
+  border-radius:8px;padding:.6rem;font-size:.85rem;margin-bottom:1rem">تم تحديث كلمة المرور بنجاح — سجّل الدخول بها الآن ✅</div>{% endif %}
     <form method="POST">
       <input type="password" name="password" placeholder="كلمة المرور" autofocus>
       <button type="submit">دخول</button>
     </form>
+    <a href="/forgot" style="display:block;margin-top:.7rem;color:#8a4800;font-size:.8rem;text-decoration:none;font-weight:700">نسيت كلمة المرور؟</a>
     <div class="version">{{ co.system_title }}</div>
     <div class="copyright">Copyright 2026 &copy; Your Name &mdash; <a href="https://example.com" target="_blank">example.com</a></div>
     <div style="margin-top:1.2rem;padding-top:.85rem;border-top:1px solid rgba(200,160,40,.25);text-align:center"><a href="/admin/login" style="display:inline-flex;align-items:center;gap:.4rem;color:#8a4800;font-size:.8rem;font-weight:700;text-decoration:none;padding:.4rem .9rem;border-radius:8px;border:1px solid rgba(138,72,0,.3);background:rgba(138,72,0,.06);transition:.2s" onmouseover="this.style.background='rgba(138,72,0,.14)';this.style.borderColor='rgba(138,72,0,.6)'" onmouseout="this.style.background='rgba(138,72,0,.06)';this.style.borderColor='rgba(138,72,0,.3)'">&#9881; الدخول إلى لوحة التحكم</a></div>
@@ -74,6 +77,61 @@ function toggleLock() {
     .finally(() => { btn.disabled = false; });
 }
 </script>
+</body></html>"""
+
+DASH_FORGOT_HTML = """<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ co.short_ar }} — استعادة كلمة المرور</title>
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#b88800;font-family:'Tajawal',sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center}
+.wrap{width:100%;max-width:390px;padding:1rem}
+.card{background:#fffde8;border:1px solid #c8a028;border-top:3px solid #8a4800;border-radius:12px;padding:2.2rem 1.75rem;text-align:center;box-shadow:0 8px 32px rgba(100,60,0,.18)}
+.badge{display:inline-block;background:rgba(138,72,0,.1);border:1px solid rgba(138,72,0,.3);color:#8a4800;font-size:.72rem;font-weight:700;padding:3px 12px;border-radius:20px;margin-bottom:1.2rem;letter-spacing:.8px}
+h1{color:#1e1404;font-size:1.15rem;font-weight:900;margin-bottom:.3rem}
+.sub{color:#7a5e28;font-size:.82rem;margin-bottom:1.6rem;line-height:1.6}
+.err{background:rgba(176,40,40,.08);border:1px solid rgba(176,40,40,.25);color:#b02828;border-radius:8px;padding:.65rem;font-size:.83rem;margin-bottom:1rem}
+.field{margin-bottom:.85rem;text-align:right}
+label{display:block;font-size:.75rem;font-weight:700;color:#5a3810;margin-bottom:.3rem}
+input{width:100%;background:#fdf5c0;border:1px solid #c8a028;color:#1e1404;border-radius:8px;padding:.7rem 1rem;font-family:'Tajawal',sans-serif;font-size:.95rem;outline:none;transition:.2s}
+input:focus{border-color:#8a4800;box-shadow:0 0 0 3px rgba(138,72,0,.15)}
+.btn{width:100%;background:#8a4800;border:none;color:#fff;border-radius:8px;padding:.8rem;font-family:'Tajawal',sans-serif;font-size:1rem;font-weight:900;cursor:pointer;transition:.2s;margin-top:.3rem}
+.btn:hover{background:#a85a00}
+.back{display:block;margin-top:1.2rem;color:#9a7838;font-size:.78rem;text-decoration:none}
+</style>
+</head>
+<body>
+<div class="wrap"><div class="card">
+  <img src="{{ logo_uri }}" alt="{{ co.name_ar }}" style="width:110px;height:auto;margin:0 auto .9rem;display:block;mix-blend-mode:multiply">
+  <div class="badge">&#128274; استعادة كلمة المرور</div>
+  <h1>استعادة كلمة مرور الدخول</h1>
+  {% if not sent %}
+    <p class="sub">سيُرسل كود تحقق من 6 أرقام إلى حساب تليجرام الخاص بالمالك فقط، صالح لمدة 10 دقائق.</p>
+    {% if error %}<div class="err">{{ error }}</div>{% endif %}
+    <form method="POST">
+      <input type="hidden" name="action" value="send">
+      <button type="submit" class="btn">إرسال الكود إلى تليجرام</button>
+    </form>
+  {% else %}
+    <p class="sub">تم إرسال الكود إلى تليجرام (إن كان الإعداد مفعّلاً). أدخله مع كلمة المرور الجديدة:</p>
+    {% if error %}<div class="err">{{ error }}</div>{% endif %}
+    <form method="POST">
+      <input type="hidden" name="action" value="verify">
+      <input type="hidden" name="token" value="{{ token }}">
+      <div class="field"><label>كود التحقق</label>
+        <input type="text" name="code" inputmode="numeric" maxlength="6" dir="ltr" autofocus></div>
+      <div class="field"><label>كلمة المرور الجديدة</label>
+        <input type="password" name="new_pwd" placeholder="8 أحرف على الأقل"></div>
+      <div class="field"><label>تأكيد كلمة المرور الجديدة</label>
+        <input type="password" name="new_pwd2"></div>
+      <button type="submit" class="btn">تعيين كلمة المرور &#8592;</button>
+    </form>
+  {% endif %}
+  <a href="/login" class="back">&#8592; العودة لصفحة الدخول</a>
+</div></div>
 </body></html>"""
 
 
@@ -1145,7 +1203,7 @@ tr.sel-row:hover{background:rgba(200,135,60,.12)!important}
         <div class="about-line">صُنع بكل حب</div>
         <div class="about-line">من فريق العروض الفنية</div>
         <div class="about-line">لشركة {{ co.short_ar }}</div>
-        <div class="about-name">م. اسمك</div>
+        <div class="about-name">م. يوسف سليم</div>
       </div>
     </div>
     <a href="/logout">خروج ↩</a>
@@ -1360,6 +1418,7 @@ tr.sel-row:hover{background:rgba(200,135,60,.12)!important}
               <option value="engineers">👷 حمل المهندسين</option>
               <option value="overview">📊 نشطة مقابل مغلقة</option>
               <option value="status_pct">📉 نسبة الضغط</option>
+              <option value="trend">📅 الاتجاه اليومي (14 يوم)</option>
             </select>
             <span style="position:absolute;left:.55rem;top:50%;transform:translateY(-50%);
               pointer-events:none;font-size:.65rem;color:var(--amber);line-height:1">▼</span>
@@ -1582,6 +1641,11 @@ tr.sel-row:hover{background:rgba(200,135,60,.12)!important}
               <tr id="prow-{{ p.id }}" style="border-bottom:1px solid rgba(180,140,40,.2)">
                 <td style="padding:.5rem .75rem;font-size:.84rem;color:var(--text)">
                   <span title="{{ p.title|e }}">{{ p.title }}</span>
+                  {% if p.approval_stage == 'awaiting_engineer' %}
+                  <br><span style="background:rgba(200,144,64,.12);color:var(--yellow);border-radius:4px;padding:0 5px;font-size:.68rem;font-weight:700">🔧 بانتظار موافقة المهندس</span>
+                  {% elif p.approval_stage == 'awaiting_manager' %}
+                  <br><span style="background:rgba(26,90,154,.12);color:var(--blue);border-radius:4px;padding:0 5px;font-size:.68rem;font-weight:700">👔 بانتظار موافقة المدير</span>
+                  {% endif %}
                 </td>
                 <td style="padding:.5rem .75rem">
                   {% if p.change_type == 'NEW_TENDER' or p.change_type == 'NEW' %}
@@ -1658,6 +1722,7 @@ const _pal2 = _pal.map(c => c + 'b0'); // semi-transparent version
 const _ownerData   = {{ owner_dist | tojson }};
 const _engLoadData = {{ eng_load | tojson }};
 const _engNames    = [{% for e in engineers %}'{{ e.name }}',{% endfor %}];
+const _dailyTrend  = {{ daily_trend | tojson }};
 
 const _chartSets = {
   tenders: {
@@ -1703,6 +1768,14 @@ const _chartSets = {
     bdr:_engNames.map(n=>(_engLoadData[n]||{}).hex||'#3fb950'),
     isPercent:true,
   },
+  trend: {
+    sub:_dailyTrend.data.reduce((a,b)=>a+b,0)+' منافسة جديدة',
+    ctype:'line',
+    labels:_dailyTrend.labels,
+    data:_dailyTrend.data,
+    bg:'rgba(56,139,253,.15)',
+    bdr:'#388bfd',
+  },
 };
 
 let _chartInst = null;
@@ -1721,8 +1794,32 @@ function switchChart(type) {
   else canvas.style.maxHeight = '210px';
 
   const isDoughnut = ds.ctype === 'doughnut';
+  const isLine = ds.ctype === 'line';
   let cfg;
-  if (isDoughnut) {
+  if (isLine) {
+    cfg = {
+      type:'line',
+      data:{ labels:ds.labels, datasets:[{
+        data:ds.data, label:'منافسات جديدة',
+        borderColor:ds.bdr, backgroundColor:ds.bg,
+        fill:true, tension:.3, borderWidth:2,
+        pointRadius:3, pointBackgroundColor:ds.bdr,
+      }]},
+      options:{
+        animation:{duration:550,easing:'easeOutQuart'},
+        plugins:{
+          legend:{display:false},
+          tooltip:{callbacks:{label:c=>` ${c.raw} منافسة`}}
+        },
+        scales:{
+          x:{ticks:{color:'#7a5e28',font:{family:'Tajawal',size:9}},
+            grid:{color:'transparent'}},
+          y:{beginAtZero:true,ticks:{color:'#7a5e28',font:{family:'Tajawal',size:10},stepSize:1},
+            grid:{color:'rgba(180,140,40,.12)'}}
+        }
+      }
+    };
+  } else if (isDoughnut) {
     cfg = {
       type:'doughnut',
       data:{ labels:ds.labels, datasets:[{
@@ -2417,7 +2514,7 @@ tbody tr{transition:background .1s}
         <div class="about-line">صُنع بكل حب</div>
         <div class="about-line">من فريق العروض الفنية</div>
         <div class="about-line">لشركة {{ co.short_ar }}</div>
-        <div class="about-name">م. اسمك</div>
+        <div class="about-name">م. يوسف سليم</div>
       </div>
     </div>
     <a href="/logout">

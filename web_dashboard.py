@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Al-Rawaf Tender Monitor — Web Dashboard v2 (Redesigned)"""
-VERSION = "5.9.1"   # ← bump this on every deploy (prevents old-file regressions)
+VERSION = "5.9.7"   # ← bump this on every deploy (prevents old-file regressions)
 
 from flask import Flask, render_template_string, request, redirect, session, jsonify, abort, Response
 from company_profile import PROFILE
@@ -8,12 +8,15 @@ import queue as _queue
 import threading as _threading
 import json as _json
 import sqlite3, os, functools, secrets, base64, time, hmac
+import requests
 from pathlib import Path
 from datetime import datetime, timedelta
-from admin_templates import ADMIN_LOGIN_HTML, ADMIN_PANEL_HTML
+from security_vault import decrypt_val
+from admin_templates import ADMIN_LOGIN_HTML, ADMIN_PANEL_HTML, ADMIN_FORGOT_HTML
 from dashboard_templates import (LOGIN_HTML, TENDER_DETAIL_HTML, DASHBOARD_HTML,
                                  RESULTS_HTML, ENGINEER_LOGIN_HTML,
-                                 ENGINEER_DASH_HTML, ENGINEER_VIEW_HTML, OWNERS_HTML)
+                                 ENGINEER_DASH_HTML, ENGINEER_VIEW_HTML, OWNERS_HTML,
+                                 DASH_FORGOT_HTML)
 
 app = Flask(__name__)
 
@@ -59,12 +62,19 @@ if not _secret:
 app.secret_key = _secret
 
 DB_PATH  = Path(os.getenv("DB_PATH", "/opt/elrawaf-tender/output/tenders.db"))
-DASH_PWD = os.getenv("DASHBOARD_PASSWORD", "change-me-in-.env")
+DASH_PWD = decrypt_val(os.getenv("DASHBOARD_PASSWORD", "change-me-in-.env"))  # FERNET: or plain -- decrypt_val handles both
 PORT     = int(os.getenv("DASHBOARD_PORT", "8080"))
 
 # ── Admin Control Panel ──────────────────────────────────────────
 ADMIN_EMAIL = "owner@example.com"          # owner's email — immutable gate
-ADMIN_PWD   = os.getenv("ADMIN_PASSWORD", "change-me-in-.env")  # change in .env
+ADMIN_PWD   = decrypt_val(os.getenv("ADMIN_PASSWORD", "change-me-in-.env"))  # FERNET: or plain -- decrypt_val handles both
+
+# ── Password recovery: owner's private Telegram DM (not the shared group CHAT_ID) ──
+OWNER_TELEGRAM_ID = os.getenv("OWNER_TELEGRAM_ID", "").strip()  # dashboard-only, distinct from bot_daemon.py's ADMIN_USER_ID RBAC var
+try:
+    TELEGRAM_TOKEN = decrypt_val(os.getenv("TELEGRAM_TOKEN", ""))
+except Exception:
+    TELEGRAM_TOKEN = ""
 
 
 # ── Security: only accept connections from localhost (Cloudflare tunnel) ──
@@ -215,9 +225,9 @@ def ensure_app_config_table():
             )
         """)
         defaults = [
-            ("company_name_ar", "الرواف للمقاولات"),
-            ("company_name_en", "ALRAWAF CONTRACTING"),
-            ("system_title",    "نظام الرواف"),
+            ("company_name_ar", "شركة المقاولات النموذجية"),
+            ("company_name_en", "SAMPLE CONTRACTING"),
+            ("system_title",    "نظام متابعة المناقصات"),
             ("system_subtitle", "لوحة متابعة المنافسات"),
             ("footer_owner",    "Your Name"),
             ("footer_url",      "https://example.com"),
@@ -282,6 +292,45 @@ def _login_succeeded(ip: str):
 
 _LOCKOUT_MSG = "تم إيقاف المحاولات مؤقتاً بسبب تكرار الإدخال الخاطئ — حاول مجدداً بعد 15 دقيقة"
 
+# ── Admin password recovery: 6-digit code sent to ADMIN_USER_ID via Telegram DM ──
+_RESET_CODES: dict = {}
+_RESET_LOCK = _threading.Lock()
+_RESET_TTL_SEC   = 10 * 60
+_RESET_MAX_TRIES = 5
+
+def _send_telegram_dm(chat_id: str, text: str) -> bool:
+    if not (TELEGRAM_TOKEN and chat_id):
+        return False
+    try:
+        r = requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+            data={"chat_id": chat_id, "text": text}, timeout=8,
+        )
+        return r.status_code == 200
+    except Exception:
+        return False
+
+def _new_reset_code(token: str) -> str:
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    with _RESET_LOCK:
+        _RESET_CODES[token] = {"code": code, "expires": time.time() + _RESET_TTL_SEC, "tries": 0}
+    return code
+
+def _check_reset_code(token: str, code: str) -> bool:
+    with _RESET_LOCK:
+        entry = _RESET_CODES.get(token)
+        if not entry or time.time() > entry["expires"]:
+            _RESET_CODES.pop(token, None)
+            return False
+        entry["tries"] += 1
+        if entry["tries"] > _RESET_MAX_TRIES:
+            _RESET_CODES.pop(token, None)
+            return False
+        ok = hmac.compare_digest(code, entry["code"])
+        if ok:
+            _RESET_CODES.pop(token, None)
+        return ok
+
 def login_required(f):
     @functools.wraps(f)
     def wrap(*a, **kw):
@@ -305,12 +354,77 @@ def login():
             _login_failed(ip)
             error = "كلمة المرور غير صحيحة"
     return render_template_string(LOGIN_HTML, error=error, logo_uri=_LOGO_DATA_URI,
-                                  expired=request.args.get("expired"))
+                                  expired=request.args.get("expired"),
+                                  reset_ok=request.args.get("reset") == "1")
 
 @app.route("/logout")
 def logout():
     session.clear()
     return redirect("/login")
+
+@app.route("/forgot", methods=["GET", "POST"])
+def dash_forgot():
+    """استعادة كلمة مرور صفحة الدخول الرئيسية -- نفس آلية /admin/forgot بالضبط،
+    تُحدّث DASHBOARD_PASSWORD بدلاً من ADMIN_PASSWORD."""
+    global DASH_PWD
+    error = ""
+    sent  = False
+    token = request.form.get("token", "")
+    if request.method == "POST":
+        ip = _client_ip()
+        action = request.form.get("action", "")
+        if action == "send":
+            if _login_blocked(ip):
+                error = _LOCKOUT_MSG
+            elif not OWNER_TELEGRAM_ID:
+                error = "لم يتم ضبط OWNER_TELEGRAM_ID في .env — لا يمكن إرسال كود عبر تليجرام حتى تضبطه"
+            else:
+                token = secrets.token_urlsafe(16)
+                code = _new_reset_code(token)
+                ok = _send_telegram_dm(
+                    OWNER_TELEGRAM_ID,
+                    f"🔐 كود استعادة كلمة مرور الدخول: {code}\nصالح لمدة 10 دقائق. تجاهل الرسالة إن لم تطلبها.",
+                )
+                if ok:
+                    sent = True
+                else:
+                    error = "تعذر إرسال الكود عبر تليجرام — تأكد من صلاحية التوكن"
+        elif action == "verify":
+            sent = True
+            code     = request.form.get("code", "").strip()
+            new_pwd  = request.form.get("new_pwd", "").strip()
+            new_pwd2 = request.form.get("new_pwd2", "").strip()
+            if _login_blocked(ip):
+                error = _LOCKOUT_MSG
+            elif not _check_reset_code(token, code):
+                _login_failed(ip)
+                error = "الكود غير صحيح أو منتهي الصلاحية"
+            elif not new_pwd or len(new_pwd) < 8:
+                error = "كلمة المرور الجديدة قصيرة (8 أحرف على الأقل)"
+            elif new_pwd != new_pwd2:
+                error = "كلمتا المرور غير متطابقتين"
+            else:
+                env_path = "/opt/elrawaf-tender/.env"
+                try:
+                    with open(env_path, "r", encoding="utf-8") as ef:
+                        lines_ = ef.readlines()
+                    updated = False
+                    for i, line in enumerate(lines_):
+                        if line.startswith("DASHBOARD_PASSWORD="):
+                            lines_[i] = f"DASHBOARD_PASSWORD={new_pwd}\n"
+                            updated = True
+                            break
+                    if not updated:
+                        lines_.append(f"DASHBOARD_PASSWORD={new_pwd}\n")
+                    with open(env_path, "w", encoding="utf-8") as ef:
+                        ef.writelines(lines_)
+                    DASH_PWD = new_pwd
+                    _login_succeeded(ip)
+                    return redirect("/login?reset=1")
+                except Exception as ex:
+                    error = f"خطأ: {ex}"
+    return render_template_string(DASH_FORGOT_HTML, error=error, sent=sent,
+                                   token=token, logo_uri=_LOGO_DATA_URI)
 
 # ══════════════════════════════════════════════════════
 # ADMIN CONTROL PANEL ROUTES
@@ -341,7 +455,70 @@ def admin_login():
             _login_failed(ip)
             error = "البريد الإلكتروني أو كلمة المرور غير صحيحة"
     return render_template_string(ADMIN_LOGIN_HTML, error=error,
+                                   reset_ok=request.args.get("reset") == "1",
                                    logo_uri=_LOGO_DATA_URI)
+
+@app.route("/admin/forgot", methods=["GET", "POST"])
+def admin_forgot():
+    global ADMIN_PWD
+    error = ""
+    sent  = False
+    token = request.form.get("token", "")
+    if request.method == "POST":
+        ip = _client_ip()
+        action = request.form.get("action", "")
+        if action == "send":
+            if _login_blocked(ip):
+                error = _LOCKOUT_MSG
+            elif not OWNER_TELEGRAM_ID:
+                error = "لم يتم ضبط OWNER_TELEGRAM_ID في .env — لا يمكن إرسال كود عبر تليجرام حتى تضبطه"
+            else:
+                token = secrets.token_urlsafe(16)
+                code = _new_reset_code(token)
+                ok = _send_telegram_dm(
+                    OWNER_TELEGRAM_ID,
+                    f"🔐 كود استعادة كلمة مرور المشرف: {code}\nصالح لمدة 10 دقائق. تجاهل الرسالة إن لم تطلبها.",
+                )
+                if ok:
+                    sent = True
+                else:
+                    error = "تعذر إرسال الكود عبر تليجرام — تأكد من صلاحية التوكن"
+        elif action == "verify":
+            sent = True
+            code     = request.form.get("code", "").strip()
+            new_pwd  = request.form.get("new_apwd", "").strip()
+            new_pwd2 = request.form.get("new_apwd2", "").strip()
+            if _login_blocked(ip):
+                error = _LOCKOUT_MSG
+            elif not _check_reset_code(token, code):
+                _login_failed(ip)
+                error = "الكود غير صحيح أو منتهي الصلاحية"
+            elif not new_pwd or len(new_pwd) < 8:
+                error = "كلمة المرور الجديدة قصيرة (8 أحرف على الأقل)"
+            elif new_pwd != new_pwd2:
+                error = "كلمتا المرور غير متطابقتين"
+            else:
+                env_path = "/opt/elrawaf-tender/.env"
+                try:
+                    with open(env_path, 'r', encoding='utf-8') as ef:
+                        lines = ef.readlines()
+                    updated = False
+                    for i, line in enumerate(lines):
+                        if line.startswith('ADMIN_PASSWORD='):
+                            lines[i] = f'ADMIN_PASSWORD={new_pwd}\n'
+                            updated = True
+                            break
+                    if not updated:
+                        lines.append(f'ADMIN_PASSWORD={new_pwd}\n')
+                    with open(env_path, 'w', encoding='utf-8') as ef:
+                        ef.writelines(lines)
+                    ADMIN_PWD = new_pwd
+                    _login_succeeded(ip)
+                    return redirect("/admin/login?reset=1")
+                except Exception as ex:
+                    error = f"خطأ: {ex}"
+    return render_template_string(ADMIN_FORGOT_HTML, error=error, sent=sent,
+                                   token=token, logo_uri=_LOGO_DATA_URI)
 
 @app.route("/admin/logout")
 def admin_logout():
@@ -527,7 +704,7 @@ def get_dashboard_data():
 
         pending_tenders = conn.execute("""
             SELECT p.id, p.title, p.change_type, p.submission_date,
-                   p.suggested_engineer, p.status, p.created_at,
+                   p.suggested_engineer, p.status, p.created_at, p.approval_stage,
                    mt.id AS master_id
             FROM pending_changes p
             LEFT JOIN master_tenders mt ON mt.title = p.title
@@ -637,6 +814,19 @@ def get_dashboard_data():
            "weeks": _pcal.monthcalendar(today.year, today.month),
            "marks": marks, "today": today.day}
 
+    # v5.9.6: daily tender volume, last 14 days (Phase 3 -- ROADMAP_V6.md analytics)
+    with sqlite3.connect(str(DB_PATH)) as conn:
+        trend_rows = conn.execute(
+            "SELECT DATE(created_at) as d, COUNT(*) as c FROM master_tenders "
+            "WHERE created_at >= datetime('now', '-14 days') GROUP BY d ORDER BY d"
+        ).fetchall()
+    trend_map = {r[0]: r[1] for r in trend_rows}
+    daily_trend = {"labels": [], "data": []}
+    for i in range(13, -1, -1):
+        d = (today - timedelta(days=i)).isoformat()
+        daily_trend["labels"].append(d[5:])   # MM-DD, shorter x-axis labels
+        daily_trend["data"].append(trend_map.get(d, 0))
+
     return {
         "tenders":           enriched,
         "total_active":      len(enriched),
@@ -656,6 +846,7 @@ def get_dashboard_data():
         "today_count":       today_count,
         "guarantees":        guarantees,
         "cal":               cal,
+        "daily_trend":       daily_trend,
     }
 
 def _deadline_info(date_str):

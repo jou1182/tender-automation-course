@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Company identity loader — single source of truth for all tenant-specific
-branding. Reads company_profile.json; falls back to embedded Al-Rawaf defaults.
+branding. Reads company_profile.json; falls back to embedded generic defaults.
 Import PROFILE anywhere: `from company_profile import PROFILE`."""
 import json
 from pathlib import Path
@@ -29,6 +29,7 @@ _DEFAULTS = {
     "engineers": [{"name": "مهندس", "capacity": 5}, {"name": "مهندس", "capacity": 5},
                   {"name": "مهندس", "capacity": 5}, {"name": "مهندس", "capacity": 5},
                   {"name": "مهندس", "capacity": 5}, {"name": "مهندس", "capacity": 5}],
+    "dual_approval": False,
 }
 
 def load_profile():
@@ -40,7 +41,9 @@ def load_profile():
             for k, v in raw.items():
                 if k.startswith("_"):
                     continue
-                if isinstance(v, str) and v.strip():
+                if isinstance(v, bool):
+                    data[k] = v
+                elif isinstance(v, str) and v.strip():
                     data[k] = v
                 elif isinstance(v, list):
                     data[k] = v

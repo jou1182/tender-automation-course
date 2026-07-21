@@ -31,5 +31,7 @@
       "capacity": 5
     }
   ],
-  "_adapter_note": "غيّر portal_adapter لاسم محوّل منصتك بعد بنائه في portal_adapter.py"
+  "_adapter_note": "غيّر portal_adapter لاسم محوّل منصتك بعد بنائه في portal_adapter.py",
+  "_dual_approval_note": "لو true: أي منافسة جديدة/تعديل تمر أولاً بموافقة فنية من المهندس المعيّن (خاص تليجرام) ثم موافقة نهائية من المدير (OWNER_TELEGRAM_ID) قبل ما تُعتمد فعلياً. لو false أو المهندس غير مشترك: يرجع للسلوك الحالي (موافقة واحدة في الجروب).",
+  "dual_approval": false
 }

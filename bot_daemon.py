@@ -13,6 +13,7 @@ from datetime import datetime, UTC
 from dotenv import load_dotenv
 from db_manager import DBManager, DB_PATH
 from security_vault import decrypt_val
+from company_profile import PROFILE
 try:
     from pdf_report import send_monthly_report as _send_pdf
     PDF_OK = True
@@ -34,6 +35,10 @@ TELEGRAM_TOKEN = decrypt_val(os.getenv("TELEGRAM_TOKEN"))
 CHAT_ID = os.getenv("CHAT_ID")
 # Optional but highly recommended: your personal Telegram User ID
 ADMIN_USER_ID = os.getenv("ADMIN_USER_ID")
+# ROADMAP_V6 Phase 4: مدير(ون) الموافقة النهائية للموافقة المزدوجة الاختيارية
+# (نفس متغير OWNER_TELEGRAM_ID المستخدم في web_dashboard.py لاستعادة كلمة المرور --
+#  نفس الشخص/المفهوم "صاحب القرار النهائي"؛ يقبل معرفات متعددة مفصولة بفاصلة)
+OWNER_TELEGRAM_IDS = {s.strip() for s in os.getenv("OWNER_TELEGRAM_ID", "").split(",") if s.strip()}
 CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL_MINUTES", 5))
 ALLOW_AUTONOMOUS_LOGIN = os.getenv("ALLOW_AUTONOMOUS_LOGIN", "0").strip().lower() in {"1", "true", "yes", "on"}
 NO_VNC_URL = os.getenv("NO_VNC_URL", "http://127.0.0.1:6080/vnc.html")
@@ -382,34 +387,75 @@ def send_approval_message(change):
     if breakdown:
         msg += f"\n{breakdown}\n"
 
+    # ── ROADMAP_V6 Phase 2: كشف التشابه مع مناقصات فائزة سابقة ──────────
+    if change['change_type'] in ('NEW', 'NEW_TENDER'):
+        try:
+            similar = db.find_similar_won_tenders(change['title'], owner_name, btype_name)
+        except Exception:
+            similar = []
+        if similar:
+            sim_lines = []
+            for s in similar:
+                price_str = f" — فزنا بـ {s['winning_price']:,.0f} ريال" if s['winning_price'] else ""
+                sim_lines.append(f"• {str(s['title'])[:45]}{price_str}")
+            msg += "\n🎯 *مشابهة لمشاريع فزنا بها سابقاً:*\n" + "\n".join(sim_lines) + "\n"
+
+    # -- ROADMAP_V6 Phase 4: موافقة مزدوجة اختيارية (مهندس ثم مدير) --------
+    # مُفعّلة فقط لو company_profile.json.dual_approval=true وكان المهندس
+    # المقترح مشتركاً فعلاً (/subscribe) وفيه مدير مضبوط (OWNER_TELEGRAM_ID) --
+    # غير ذلك يرجع تلقائياً لمسار الموافقة الواحدة الحالي (سلوك الرواف الحالي).
+    pending_id = change["id"]
+    eng_chat_ids = _subs_for(eng_name) if eng_name else []
+    if PROFILE.get("dual_approval") and eng_chat_ids and OWNER_TELEGRAM_IDS:
+        db.set_approval_stage(pending_id, "awaiting_engineer", eng_name)
+        eng_markup = InlineKeyboardMarkup(row_width=1)
+        eng_markup.add(
+            InlineKeyboardButton("✅ موافقة فنية", callback_data=f"engapprove_{pending_id}_{eng_name}"),
+            InlineKeyboardButton("❌ رفض", callback_data=f"engreject_{pending_id}")
+        )
+        eng_msg = "🔧 *مطلوب موافقتك الفنية أولاً*\n\n" + msg
+        import requests
+        for cid in eng_chat_ids:
+            try:
+                requests.post(
+                    f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+                    json={"chat_id": cid, "text": eng_msg, "parse_mode": "Markdown",
+                          "reply_markup": eng_markup.to_json()},
+                    timeout=15
+                )
+            except Exception as e:
+                logger.error(f"Engineer-stage delivery failed for chat {cid}: {e}")
+        logger.info(f"Dual-approval stage 1 (engineer) sent for tender id={pending_id} to {eng_name}.")
+        return
+
     markup = InlineKeyboardMarkup(row_width=1)
     btn_approve = InlineKeyboardButton(
-        f"✅ اعتماد لـ ({eng_name}) وتحديث الماستر",
-        callback_data=f"approve_{change['id']}_{eng_name}"
+        f"اعتماد لـ ({eng_name}) وتحديث الماستر",
+        callback_data=f"approve_{pending_id}_{eng_name}"
     )
     btn_change_eng = InlineKeyboardButton(
-        "🔄 أفضّل إسنادها لمهندس آخر",
-        callback_data=f"changeeng_{change['id']}"
+        "أفضّل إسنادها لمهندس آخر",
+        callback_data=f"changeeng_{pending_id}"
     )
     btn_reject = InlineKeyboardButton(
-        "❌ تجاهل وحذف من المعلقات",
-        callback_data=f"reject_{change['id']}"
+        "تجاهل وحذف من المعلقات",
+        callback_data=f"reject_{pending_id}"
     )
     markup.add(btn_approve, btn_change_eng, btn_reject)
 
     import requests
     payload = {
-        'chat_id': CHAT_ID,
-        'text': msg,
-        'parse_mode': 'Markdown',
-        'reply_markup': markup.to_json()
+        "chat_id": CHAT_ID,
+        "text": msg,
+        "parse_mode": "Markdown",
+        "reply_markup": markup.to_json()
     }
     try:
         requests.post(
             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
             json=payload, timeout=15
         )
-        logger.info(f"Delivered approval card for '{change['title']}' via fresh TCP connection.")
+        logger.info(f"Delivered approval card for tender id={pending_id} via fresh TCP connection.")
     except Exception as e:
         logger.error(f"Telegram delivery failed: {e}")
 
@@ -1678,6 +1724,136 @@ def handle_reject(call):
         call.message.chat.id, call.message.message_id
     )
     bot.answer_callback_query(call.id, "تم التجاهل")
+
+# ============================================================
+# ROADMAP_V6 Phase 4: موافقة مزدوجة اختيارية -- مراحل المهندس والمدير
+# (تُستخدم فقط لو company_profile.json.dual_approval=true؛ راجع send_approval_message)
+# ============================================================
+@bot.callback_query_handler(func=lambda call: call.data.startswith('engapprove_'))
+def handle_eng_approve(call):
+    """المرحلة 1: موافقة المهندس المعيّن الفنية (خاص فقط، ويجب أن يكون هو صاحب البطاقة)."""
+    if getattr(call.message.chat, "type", "") != "private":
+        bot.answer_callback_query(call.id, "❌ هذا الإجراء متاح فقط في الخاص.", show_alert=True)
+        return
+    _, pending_id, eng_name = call.data.split('_', 2)
+    if str(call.message.chat.id) not in {str(c) for c in _subs_for(eng_name)}:
+        bot.answer_callback_query(call.id, "❌ خطأ أمني: هذه ليست بطاقتك.", show_alert=True)
+        return
+
+    with db._get_connection() as conn:
+        p = conn.execute("SELECT title, status FROM pending_changes WHERE id = ?", (pending_id,)).fetchone()
+        title = p[0] if p else None
+        cur_status = p[1] if p else None
+    if cur_status not in ('PENDING_APPROVAL', 'NOTIFIED'):
+        bot.answer_callback_query(call.id, "⚠️ هذا الطلب تمت معالجته مسبقاً.", show_alert=True)
+        return
+
+    db.set_approval_stage(pending_id, "awaiting_manager")
+    bot.edit_message_text(
+        f"✅ *وافقت فنياً على:* {title}\nبانتظار الموافقة النهائية من المدير.",
+        call.message.chat.id, call.message.message_id, parse_mode="Markdown"
+    )
+    bot.answer_callback_query(call.id, "تم إرسالها للمدير للموافقة النهائية")
+
+    mgr_markup = InlineKeyboardMarkup(row_width=1)
+    mgr_markup.add(
+        InlineKeyboardButton(f"✅ موافقة نهائية لـ ({eng_name})", callback_data=f"mgrapprove_{pending_id}_{eng_name}"),
+        InlineKeyboardButton("❌ رفض", callback_data=f"mgrreject_{pending_id}")
+    )
+    mgr_msg = (f"👔 *مطلوب موافقتك النهائية*\n\n📌 *الاسم:* {title}\n"
+               f"🔧 *وافق فنياً:* {eng_name}\n")
+    import requests
+    for mid in OWNER_TELEGRAM_IDS:
+        try:
+            requests.post(
+                f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+                json={"chat_id": mid, "text": mgr_msg, "parse_mode": "Markdown",
+                      "reply_markup": mgr_markup.to_json()},
+                timeout=15
+            )
+        except Exception as e:
+            logger.error(f"Manager-stage delivery failed for chat {mid}: {e}")
+    logger.info(f"Dual-approval stage 2 (manager) sent for pending id={pending_id}.")
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('engreject_'))
+def handle_eng_reject(call):
+    """رفض المهندس للمرحلة الفنية -- ينهي الطلب مباشرة، لا يُصعَّد للمدير."""
+    if getattr(call.message.chat, "type", "") != "private":
+        bot.answer_callback_query(call.id, "❌ هذا الإجراء متاح فقط في الخاص.", show_alert=True)
+        return
+    _, pending_id = call.data.split('_', 1)
+    with db._get_connection() as conn:
+        p = conn.execute("SELECT suggested_engineer, status FROM pending_changes WHERE id = ?", (pending_id,)).fetchone()
+    eng_name = p[0] if p else None
+    cur_status = p[1] if p else None
+    if not eng_name or str(call.message.chat.id) not in {str(c) for c in _subs_for(eng_name)}:
+        bot.answer_callback_query(call.id, "❌ خطأ أمني: هذه ليست بطاقتك.", show_alert=True)
+        return
+    if cur_status not in ('PENDING_APPROVAL', 'NOTIFIED'):
+        bot.answer_callback_query(call.id, "⚠️ هذا الطلب تمت معالجته مسبقاً.", show_alert=True)
+        return
+
+    db.delete_pending_change(pending_id)
+    bot.edit_message_text(
+        "❌ تم رفض المنافسة فنياً وإزالتها من قائمة المعلقات.",
+        call.message.chat.id, call.message.message_id
+    )
+    bot.answer_callback_query(call.id, "تم الرفض")
+    logger.info(f"Dual-approval: engineer rejected pending id={pending_id}.")
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('mgrapprove_'))
+def handle_mgr_approve(call):
+    """المرحلة 2 (الأخيرة): الموافقة النهائية من المدير -- هنا فقط يُكتب الاعتماد الفعلي."""
+    if str(call.message.chat.id) not in OWNER_TELEGRAM_IDS:
+        bot.answer_callback_query(call.id, "❌ خطأ أمني: غير مصرح لك بالموافقة النهائية.", show_alert=True)
+        return
+    _, pending_id, eng_name = call.data.split('_', 2)
+
+    with db._get_connection() as conn:
+        p = conn.execute("SELECT title, status FROM pending_changes WHERE id = ?", (pending_id,)).fetchone()
+        title = p[0] if p else None
+        cur_status = p[1] if p else None
+    if cur_status not in ('PENDING_APPROVAL', 'NOTIFIED'):
+        bot.answer_callback_query(call.id, "⚠️ هذا الطلب تمت معالجته مسبقاً — لا حاجة لإجراء.", show_alert=True)
+        return
+
+    db.approve_change(pending_id, eng_name)
+    logger.info(f"DUAL-APPROVED: Pending ID {pending_id} assigned to {eng_name} (manager final sign-off).")
+
+    bot.edit_message_text(
+        f"✅ تم الاعتماد النهائي: *{title}*\nللمهندس: *{eng_name}* وتم تحديث ملف الماستر!",
+        call.message.chat.id, call.message.message_id, parse_mode='Markdown'
+    )
+
+    if title:
+        with db._get_connection() as conn:
+            conn.execute(
+                "UPDATE pending_changes SET status = 'CLEANED' "
+                "WHERE title = ? AND status IN ('PENDING_APPROVAL', 'NOTIFIED')",
+                (title,)
+            )
+            conn.commit()
+
+    bot.answer_callback_query(call.id, "تم الاعتماد النهائي بنجاح!")
+    _notify_engineer(eng_name, "🎉 اعتُمدت منافستك نهائياً:\n" + str(title))
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('mgrreject_'))
+def handle_mgr_reject(call):
+    """رفض المدير في المرحلة الأخيرة -- ينهي الطلب."""
+    if str(call.message.chat.id) not in OWNER_TELEGRAM_IDS:
+        bot.answer_callback_query(call.id, "❌ خطأ أمني: غير مصرح لك.", show_alert=True)
+        return
+    _, pending_id = call.data.split('_', 1)
+    db.delete_pending_change(pending_id)
+    bot.edit_message_text(
+        "❌ رفض المدير المنافسة نهائياً وتمت إزالتها من قائمة المعلقات.",
+        call.message.chat.id, call.message.message_id
+    )
+    bot.answer_callback_query(call.id, "تم الرفض")
+    logger.info(f"Dual-approval: manager rejected pending id={pending_id}.")
 
 # ============================================================
 # 5b. AI CHAT ASSISTANT  (OpenAI GPT + Whisper voice)

@@ -1,5 +1,7 @@
 import sqlite3
 import pandas as pd
+import re
+import difflib
 from pathlib import Path
 from typing import Iterator, List, Optional
 from contextlib import contextmanager
@@ -11,6 +13,19 @@ logger = logging.getLogger("DB_Manager")
 
 BASE_DIR = Path(__file__).parent / "output"
 DB_PATH = BASE_DIR / "tenders.db"
+
+
+def _normalize_ar_light(text) -> str:
+    """نسخة خفيفة من normalize_arabic (توحيد الهمزات/إزالة التشكيل والتطويل)
+    لأغراض مقارنة التشابه هنا فقط -- نسخة محلية بدل استيراد engine_core
+    (الذي يستورد db_manager أصلاً، فكان سيسبب استيراداً دائرياً)."""
+    if not isinstance(text, str):
+        text = str(text)
+    text = re.sub(r'[أإآ]', 'ا', text)
+    text = re.sub(r'[\u064B-\u065F]', '', text)
+    text = text.replace('ـ', '')
+    return text.strip().lower()
+
 
 class DBManager:
     def __init__(self, db_path: Path = DB_PATH):
@@ -128,6 +143,7 @@ class DBManager:
             ''')
             self._migrate_master_tenders_schema(conn)
             self._migrate_pending_changes_constraints(conn)
+            self._migrate_pending_changes_approval_stage(conn)
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_master_tenders_title  ON master_tenders(title)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_master_tenders_status ON master_tenders(status)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_master_tenders_eng    ON master_tenders(assigned_engineer)")
@@ -151,6 +167,14 @@ class DBManager:
 
     def _migrate_pending_changes_constraints(self, conn: sqlite3.Connection) -> None:
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_pending_active_change ON pending_changes(tender_id, change_type) WHERE status IN ('PENDING_APPROVAL', 'NOTIFIED')")
+
+    def _migrate_pending_changes_approval_stage(self, conn: sqlite3.Connection) -> None:
+        """ROADMAP_V6 Phase 4: عمود يتتبع مرحلة الموافقة المزدوجة الاختيارية.
+        NULL = مسار الموافقة الواحدة القديم (السلوك الافتراضي، غير مُفعّل).
+        القيم عند التفعيل: awaiting_engineer -> awaiting_manager -> (يُحذف عند approve_change)."""
+        columns = conn.execute("PRAGMA table_info(pending_changes)").fetchall()
+        if "approval_stage" not in {c["name"] for c in columns}:
+            conn.execute("ALTER TABLE pending_changes ADD COLUMN approval_stage TEXT")
 
     def _seed_engineers(self) -> None:
         with self._get_connection() as conn:
@@ -179,11 +203,13 @@ class DBManager:
 
     def smart_suggest_engineer(self, owner: str = "", business_type: str = "", submission_date: str = "") -> dict:
         """
-        نظام ترشيح ذكي من 100 نقطة:
+        نظام ترشيح ذكي من 100 نقطة أساسية + حتى 10 نقاط إضافية لجودة الأداء:
           حمل المهندس الحالي       20 نقطة  (كلما كان فاضياً أكثر نقاطاً)
           ضغط المواعيد القادمة     30 نقطة  (كلما كانت مشاريعه بعيدة أكثر نقاطاً)
           خبرة نطاق العمل          30 نقطة  (مشاريع مماثلة سابقة × 10، حد أقصى 30)
           خبرة الجهة المالكة       20 نقطة  (تعاملات سابقة مع نفس الجهة × 10، حد أقصى 20)
+          نسبة الفوز التاريخية    +10 نقطة إضافية (فقط لو 3 نتائج محسومة فأكثر --
+                                    بيانات أقل من كده مش كافية تُحكم بها بإنصاف، فتُعطى صفر محايد)
         """
         _na = {"n/a", "nan", "none", "غير محدد", ""}
 
@@ -226,25 +252,41 @@ class DBManager:
                     (name, ow_clean)
                 ).fetchone()[0] if ow_clean.lower() not in _na else 0
 
+                # نسبة الفوز التاريخية -- بونص إضافي، محايد (صفر) إن البيانات غير كافية
+                MIN_DECIDED_SAMPLE = 3
+                win_decided = conn.execute(
+                    "SELECT COUNT(*) FROM tender_results WHERE assigned_engineer = ? AND result IN ('won','lost')",
+                    (name,)
+                ).fetchone()[0]
+                win_won = conn.execute(
+                    "SELECT COUNT(*) FROM tender_results WHERE assigned_engineer = ? AND result = 'won'",
+                    (name,)
+                ).fetchone()[0]
+                win_rate  = (win_won / win_decided) if win_decided >= MIN_DECIDED_SAMPLE else None
+                win_score = round(win_rate * 10, 1) if win_rate is not None else 0
+
                 load_score     = round((1 - min(active_count / capacity, 1.0)) * 20, 1)
                 pressure_ratio = upcoming / active_count if active_count > 0 else 0
                 deadline_score = round((1 - min(pressure_ratio, 1.0)) * 30, 1)
                 type_score     = min(type_exp * 10, 30)
                 owner_score    = min(owner_exp * 10, 20)
-                total          = round(load_score + deadline_score + type_score + owner_score, 1)
+                total          = round(load_score + deadline_score + type_score + owner_score + win_score, 1)
 
                 scored.append({
                     "name": name, "score": total,
                     "load_score": load_score, "deadline_score": deadline_score,
-                    "type_score": type_score, "owner_score": owner_score,
+                    "type_score": type_score, "owner_score": owner_score, "win_score": win_score,
                     "active_count": active_count, "upcoming": upcoming,
                     "type_exp": type_exp, "owner_exp": owner_exp, "capacity": capacity,
+                    "win_decided": win_decided, "win_rate": win_rate,
                 })
 
         scored.sort(key=lambda x: x['score'], reverse=True)
         best = scored[0]
 
         reasons = []
+        if best['win_rate'] is not None and best['win_rate'] >= 0.5:
+            reasons.append(f"نسبة فوز {round(best['win_rate']*100)}% في {best['win_decided']} مناقصة محسومة")
         if best['owner_exp'] > 0:
             reasons.append(f"عمل مع نفس الجهة {best['owner_exp']} مرة")
         if best['type_exp'] > 0:
@@ -253,13 +295,19 @@ class DBManager:
             reasons.append("لا مواعيد ضاغطة قريباً")
         reason = " | ".join(reasons) if reasons else "الأقل حملاً حالياً"
 
+        win_line = (
+            f"  🏆 نسبة الفوز: {best['win_score']}/10  ({round(best['win_rate']*100)}% من {best['win_decided']} محسومة)\n"
+            if best['win_rate'] is not None else
+            f"  🏆 نسبة الفوز: — (بيانات غير كافية بعد، أقل من 3 نتائج محسومة)\n"
+        )
         breakdown = (
-            f"📊 _تفصيل النقاط ({best['score']}/100)_\n"
+            f"📊 _تفصيل النقاط ({best['score']}/110)_\n"
             f"  🏋️ الحمل: {best['load_score']}/20  ({best['active_count']}/{best['capacity']} مشاريع)\n"
             f"  ⏰ المواعيد: {best['deadline_score']}/30  ({best['upcoming']} تُغلق في 30 يوم)\n"
             f"  🏗️ نطاق العمل: {best['type_score']}/30  ({best['type_exp']} مشروع مماثل)\n"
-            f"  🏢 الجهة المالكة: {best['owner_score']}/20  ({best['owner_exp']} تعامل سابق)"
-        )
+            f"  🏢 الجهة المالكة: {best['owner_score']}/20  ({best['owner_exp']} تعامل سابق)\n"
+            f"{win_line}"
+        ).rstrip()
 
         return {
             "name": best['name'],
@@ -347,6 +395,23 @@ class DBManager:
             conn.execute("UPDATE pending_changes SET status = 'REJECTED' WHERE id = ?", (pending_id,))
             conn.commit()
 
+    def set_approval_stage(self, pending_id: int, stage: str, engineer_name: str = None) -> None:
+        """ROADMAP_V6 Phase 4: يحرّك طلبًا معلّقًا بين مراحل الموافقة المزدوجة
+        (awaiting_engineer -> awaiting_manager) دون لمس master_tenders --
+        الاعتماد الفعلي النهائي يبقى حصريًا عبر approve_change()."""
+        with self._get_connection() as conn:
+            if engineer_name:
+                conn.execute(
+                    "UPDATE pending_changes SET approval_stage = ?, suggested_engineer = ? WHERE id = ?",
+                    (stage, engineer_name, pending_id)
+                )
+            else:
+                conn.execute(
+                    "UPDATE pending_changes SET approval_stage = ? WHERE id = ?",
+                    (stage, pending_id)
+                )
+            conn.commit()
+
     def export_master_excel(self) -> None:
         try:
             with self._get_connection() as conn:
@@ -388,6 +453,38 @@ class DBManager:
 
     def get_system_stats(self) -> dict:
         return self.get_stats_summary()
+
+    def find_similar_won_tenders(self, title: str, owner: str = "", business_type: str = "", limit: int = 3) -> List[dict]:
+        """يبحث عن مناقصات فائزة سابقة (tender_results.result='won') مشابهة
+        للمنافسة الجديدة -- نفس الجهة و/أو نفس نطاق العمل و/أو تشابه العنوان --
+        عشان يعرض للمهندس سياق تسعير مفيد قبل اتخاذ القرار."""
+        norm_title = _normalize_ar_light(title)
+        norm_owner = _normalize_ar_light(owner) if owner else ""
+        norm_btype = _normalize_ar_light(business_type) if business_type else ""
+
+        with self._get_connection() as conn:
+            won = conn.execute(
+                "SELECT title, owner, business_type, our_price, winning_price "
+                "FROM tender_results WHERE result = 'won'"
+            ).fetchall()
+
+        scored = []
+        for w in won:
+            score = 0.0
+            if norm_owner and w["owner"] and norm_owner == _normalize_ar_light(w["owner"]):
+                score += 50
+            if norm_btype and w["business_type"] and norm_btype == _normalize_ar_light(w["business_type"]):
+                score += 30
+            ratio = difflib.SequenceMatcher(None, norm_title, _normalize_ar_light(w["title"] or "")).ratio()
+            score += ratio * 20
+            if score >= 40:
+                scored.append({
+                    "title": w["title"], "owner": w["owner"],
+                    "our_price": w["our_price"], "winning_price": w["winning_price"],
+                    "score": round(score, 1),
+                })
+        scored.sort(key=lambda x: x["score"], reverse=True)
+        return scored[:limit]
 
     def get_all_engineers_with_load(self) -> List[dict]:
         with self._get_connection() as conn:

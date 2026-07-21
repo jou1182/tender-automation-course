@@ -62,11 +62,101 @@ class AlRawafPortalAdapter(PortalAdapter):
         return bool(export_in_progress.main())
 
 
+class EtimadPortalAdapter(PortalAdapter):
+    """
+    ⚠️ قالب فاضي (Template) -- غير مكتمل عمداً. لا حساب حقيقي على منصة
+    اعتماد متاح للاختبار وقت كتابة هذا الملف، فبُني كنموذج موثّق جاهز
+    للتعبئة السريعة يوم ما يتوفر عميل/حساب حقيقي، بدل ما نخترع منطق سحب
+    وهمي مش هيشتغل فعلياً.
+
+    ── قائمة التحقق قبل أي تنفيذ حقيقي (اتبعها بالترتيب) ──────────────
+    1. هل عندك حساب حقيقي على المنصة؟ بدون واحد، مفيش طريقة تختبر أي
+       خطوة تالية بثقة -- كل الخطوات دي نظرية لحد ما يتوفر.
+    2. افحص طريقة الدخول: كوكيز بسيطة (زي الرواف)؟ نموذج دخول + كابتشا؟
+       مصادقة ثنائية (2FA)؟ API رسمي موثّق؟ -- ده بيحدد هل تحتاج
+       `requests` بسيط زي export_in_progress.py، أو Selenium كامل.
+    3. لو محتاج Selenium: أنشئ selectors_etimad.json (نفس شكل selectors.json
+       الحالي) بدل ما تكتب أي CSS/XPath selector مباشرة في الكود.
+    4. حدد أعمدة تصدير المنصة الحقيقية وطابقها مع REQUIRED_COLUMNS فوق --
+       لاحظ REQUIRED_COLUMNS ثابتة بالعربية لأنها نفس أعمدة نظامنا الحالي؛
+       أي منصة جديدة لازم تُخرّج نفس الأسماء دي بالظبط (أو تُترجَم إليها
+       داخل fetch_to_file نفسها قبل كتابة ملف الإكسل).
+    5. اختبر fetch_to_file() لوحدها أولاً (بدون ربطها بـ engine_core) --
+       تأكد إنها بتكتب output/in_progress_tenders.xlsx بالشكل الصحيح.
+    6. زي ما حصل فعلاً مع محوّل الرواف: اختبر بمحاكاة (Mock) الأول، انشر،
+       راقب أول دورة فحص حية قبل ما تثق فيها بالكامل.
+
+    ── لماذا هذا الكلاس مسجّل في _REGISTRY رغم إنه غير مكتمل؟ ──────────
+    عمداً -- لو مستأجر (tenant) جديد ضبط "portal_adapter": "etimad" في
+    company_profile.json بالغلط قبل ما يكتمل التنفيذ الحقيقي، النظام
+    لازم يفشل بوضوح هنا (NotImplementedError برسالة واضحة) بدل ما يسقط
+    صامتاً على AlRawafPortalAdapter ويسحب بيانات شركة الرواف الحقيقية
+    لعميل مختلف تماماً -- ده كان سيكون تسريب بيانات فعلي.
+    """
+
+    platform_name = "اعتماد (قالب غير مكتمل)"
+
+    def fetch_to_file(self) -> bool:
+        raise NotImplementedError(
+            "EtimadPortalAdapter قالب فاضي -- لسه مش مكتمل. "
+            "راجع التعليق التوضيحي فوق الكلاس ده (قائمة التحقق) قبل أي محاولة تنفيذ حقيقي."
+        )
+
+
+class ManualExcelPortalAdapter(PortalAdapter):
+    """
+    محوّل بيانات يدوي -- الحل العملي لأي عميل ملوش منصة مدعومة، أو مش
+    عايز/محتاج يبني محوّل سحب آلي مخصص (شغل مطورين متخصص، زي ما شرحنا في
+    EtimadPortalAdapter فوق). العميل بيحدّث **ملف إكسل واحد** بنفسه بالأعمدة
+    المطلوبة بالظبط (REQUIRED_COLUMNS)، والنظام كله -- محرك المقارنة، بوت
+    تليجرام، لوحة الويب، المساعد الذكي -- يشتغل من غير أي تعديل إضافي،
+    بالظبط كأن البيانات جاية من سحب آلي حقيقي.
+
+    ── مكان الملف ──
+    manual_input/tenders.xlsx -- بجوار مجلد output/ لكن منفصل عنه عمداً:
+    output/ مُدار بالكامل من النظام (يُكتب فوقه تلقائياً)، وmanual_input/
+    ملك العميل، يعدّل فيه براحته وقت ما يحب.
+
+    ── أول تشغيل ──
+    لو الملف مش موجود، الأداة بتنشئ نسخة فاضية بالأعمدة الصحيحة تلقائياً
+    وترجع False (لا بيانات بعد) -- العميل بس يفتح الملف الجاهز ده ويملاه.
+    """
+
+    platform_name = "إدخال يدوي (إكسل)"
+
+    def __init__(self, manual_file: Path = None, output_file: Path = None):
+        # المسارات قابلة للحقن (dependency injection) لتسهيل الاختبار المعزول
+        # بلا أي لمس لملفات الإنتاج الحقيقية -- الافتراضي هو المسار الحقيقي.
+        self.manual_file = manual_file or (Path(__file__).parent / "manual_input" / "tenders.xlsx")
+        self.output_file = output_file or (Path(__file__).parent / "output" / "in_progress_tenders.xlsx")
+
+    def fetch_to_file(self) -> bool:
+        self.manual_file.parent.mkdir(parents=True, exist_ok=True)
+
+        if not self.manual_file.exists():
+            template = pd.DataFrame(columns=REQUIRED_COLUMNS)
+            template.to_excel(self.manual_file, index=False)
+            print(f"[إدخال يدوي] تم إنشاء قالب فاضٍ: {self.manual_file}")
+            print("املأ المنافسات في الملف ده واحفظه، وشغّل النظام تاني.")
+            return False
+
+        df = pd.read_excel(self.manual_file)
+        missing = self.validate_columns(df)
+        if missing:
+            print(f"[إدخال يدوي] أعمدة ناقصة في {self.manual_file}: {missing}")
+            return False
+
+        self.output_file.parent.mkdir(parents=True, exist_ok=True)
+        df.to_excel(self.output_file, index=False)
+        return True
+
+
 # ── سجل المنصات المتاحة ──
 _REGISTRY = {
-    "default": AlRawafPortalAdapter,   # المحوّل المرجعي (مثال قابل للاستبدال)
+    "default": AlRawafPortalAdapter,   # course-only alias -- teaching reference adapter
     "alrawaf": AlRawafPortalAdapter,
-    # "etimad": EtimadPortalAdapter,   # تُضاف عند بناء محوّل اعتماد الفعلي
+    "etimad": EtimadPortalAdapter,     # قالب فاضي موثّق -- راجع تعليق الكلاس قبل التفعيل
+    "manual": ManualExcelPortalAdapter,  # جاهز وشغّال بالكامل -- الحل العملي للعملاء الجدد
 }
 
 
