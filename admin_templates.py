@@ -251,7 +251,7 @@ input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(138,72,0,.12)}
     <div class="sb2">
       <p style="font-size:.82rem;color:var(--muted);margin-bottom:1rem">
         كلمة مرورك الشخصية لهذه اللوحة.
-        البريد المرتبط: <strong style="color:var(--gold);direction:ltr;unicode-bidi:embed">owner@example.com</strong>
+        البريد المرتبط: <strong style="color:var(--gold);direction:ltr;unicode-bidi:embed">{{ admin_email }}</strong>
       </p>
       <div class="fgrid" style="max-width:560px">
         <div class="fg"><label>كلمة المرور الحالية</label><input type="password" id="ca" placeholder="&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;"></div>

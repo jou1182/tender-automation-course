@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Al-Rawaf Tender Monitor — Web Dashboard v2 (Redesigned)"""
-VERSION = "5.9.11"   # ← bump this on every deploy (prevents old-file regressions)
+VERSION = "5.9.12"   # ← bump this on every deploy (prevents old-file regressions)
 
 from flask import Flask, render_template_string, request, redirect, session, jsonify, abort, Response
 from company_profile import PROFILE
@@ -559,7 +559,8 @@ def admin_panel():
     return render_template_string(ADMIN_PANEL_HTML,
                                    cfg=cfg, stats=stats,
                                    version=VERSION,
-                                   logo_uri=_LOGO_DATA_URI)
+                                   logo_uri=_LOGO_DATA_URI,
+                                   admin_email=ADMIN_EMAIL)
 
 @app.route("/admin/save-identity", methods=["POST"])
 @admin_required

@@ -2,6 +2,7 @@ import sqlite3
 import pandas as pd
 import re
 import difflib
+import os
 from pathlib import Path
 from typing import Iterator, List, Optional
 from contextlib import contextmanager
@@ -12,7 +13,12 @@ import time
 logger = logging.getLogger("DB_Manager")
 
 BASE_DIR = Path(__file__).parent / "output"
-DB_PATH = BASE_DIR / "tenders.db"
+# DB_PATH يحترم متغير البيئة DB_PATH لو مضبوط (نفس نمط web_dashboard.py بالضبط) --
+# بدونه، أي كود بينادي DBManager() من غير مسار صريح (bot_daemon.py مثلاً) كان
+# بيفتح ملف مختلف تماماً عن الملف اللي جهّزه الويزارد أو provision_instance.py،
+# فيلاقي قاعدة فاضية بلا هوية الشركة. إنتاج الرواف الحقيقي مفيهوش DB_PATH في .env
+# أصلاً، فالسلوك القديم يفضل تماماً كما هو -- التعديل إضافي بحت.
+DB_PATH = Path(os.getenv("DB_PATH")) if os.getenv("DB_PATH", "").strip() else BASE_DIR / "tenders.db"
 
 
 def _normalize_ar_light(text) -> str:
@@ -164,6 +170,14 @@ class DBManager:
             conn.execute("ALTER TABLE master_tenders ADD COLUMN portal_last_seen_date TEXT")
             # Seed with current submission_date so first run doesn't flood with notifications
             conn.execute("UPDATE master_tenders SET portal_last_seen_date = submission_date WHERE portal_last_seen_date IS NULL")
+        # engineer_locked / date_locked: يحدّدان لو التعيين/التاريخ تم تثبيته يدوياً
+        # (من لوحة التحكم) فما ينعكسش عليه تحديثات المنصة التلقائية بعد كده --
+        # موجودان في قاعدة الإنتاج الحقيقية منذ زمن طويل عبر ترحيل يدوي غير مسجَّل
+        # هنا، فأي قاعدة بيانات جديدة (عميل جديد) كانت تفتقدهما تماماً وتسقط فوراً.
+        if "engineer_locked" not in col_names:
+            conn.execute("ALTER TABLE master_tenders ADD COLUMN engineer_locked INTEGER DEFAULT 0")
+        if "date_locked" not in col_names:
+            conn.execute("ALTER TABLE master_tenders ADD COLUMN date_locked INTEGER DEFAULT 0")
 
     def _migrate_pending_changes_constraints(self, conn: sqlite3.Connection) -> None:
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_pending_active_change ON pending_changes(tender_id, change_type) WHERE status IN ('PENDING_APPROVAL', 'NOTIFIED')")

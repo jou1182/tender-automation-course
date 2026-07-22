@@ -47,7 +47,7 @@ LOGIN_HTML = """<!DOCTYPE html>
     </form>
     <a href="/forgot" style="display:block;margin-top:.7rem;color:#8a4800;font-size:.8rem;text-decoration:none;font-weight:700">نسيت كلمة المرور؟</a>
     <div class="version">{{ co.system_title }}</div>
-    <div class="copyright">Copyright 2026 &copy; Your Name &mdash; <a href="https://example.com" target="_blank">example.com</a></div>
+    <div class="copyright">Copyright 2026 &copy; {{ co.footer_owner }} &mdash; <a href="{{ co.footer_url }}" target="_blank">{{ (co.footer_url or "").replace("https://","").replace("http://","") }}</a></div>
     <div style="margin-top:1.2rem;padding-top:.85rem;border-top:1px solid rgba(200,160,40,.25);text-align:center"><a href="/admin/login" style="display:inline-flex;align-items:center;gap:.4rem;color:#8a4800;font-size:.8rem;font-weight:700;text-decoration:none;padding:.4rem .9rem;border-radius:8px;border:1px solid rgba(138,72,0,.3);background:rgba(138,72,0,.06);transition:.2s" onmouseover="this.style.background='rgba(138,72,0,.14)';this.style.borderColor='rgba(138,72,0,.6)'" onmouseout="this.style.background='rgba(138,72,0,.06)';this.style.borderColor='rgba(138,72,0,.3)'">&#9881; الدخول إلى لوحة التحكم</a></div>
   </div>
 </div>
@@ -641,7 +641,7 @@ document.addEventListener('keydown', e => {
 </script>
 <!-- COPYRIGHT FOOTER -->
 <div style="text-align:center;padding:1rem;color:rgba(255,255,255,.82);font-size:.68rem;font-family:'Tajawal',sans-serif;letter-spacing:.3px">
-  Copyright 2026 &copy; Your Name &mdash; <a href="https://example.com" target="_blank" style="color:rgba(255,255,255,.6);text-decoration:none">example.com</a>
+  Copyright 2026 &copy; {{ co.footer_owner }} &mdash; <a href="{{ co.footer_url }}" target="_blank" style="color:rgba(255,255,255,.6);text-decoration:none">{{ (co.footer_url or "").replace("https://","").replace("http://","") }}</a>
 </div>
 
 </body></html>"""
@@ -2357,7 +2357,7 @@ document.addEventListener('click',()=>{
 </script>
 <!-- COPYRIGHT FOOTER -->
 <div style="text-align:center;padding:1rem;color:rgba(255,255,255,.82);font-size:.68rem;font-family:'Tajawal',sans-serif;letter-spacing:.3px">
-  Copyright 2026 &copy; Your Name &mdash; <a href="https://example.com" target="_blank" style="color:rgba(255,255,255,.6);text-decoration:none">example.com</a>
+  Copyright 2026 &copy; {{ co.footer_owner }} &mdash; <a href="{{ co.footer_url }}" target="_blank" style="color:rgba(255,255,255,.6);text-decoration:none">{{ (co.footer_url or "").replace("https://","").replace("http://","") }}</a>
 </div>
 
 <!-- PIN GATE MODAL -->
@@ -3164,7 +3164,7 @@ function _pinCancel(){
 </script>
 <!-- COPYRIGHT FOOTER -->
 <div style="text-align:center;padding:1rem;color:rgba(255,255,255,.82);font-size:.68rem;font-family:'Tajawal',sans-serif;letter-spacing:.3px">
-  Copyright 2026 &copy; Your Name &mdash; <a href="https://example.com" target="_blank" style="color:rgba(255,255,255,.6);text-decoration:none">example.com</a>
+  Copyright 2026 &copy; {{ co.footer_owner }} &mdash; <a href="{{ co.footer_url }}" target="_blank" style="color:rgba(255,255,255,.6);text-decoration:none">{{ (co.footer_url or "").replace("https://","").replace("http://","") }}</a>
 </div>
 
 <!-- PIN GATE MODAL -->
