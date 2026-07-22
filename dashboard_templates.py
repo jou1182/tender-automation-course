@@ -330,6 +330,12 @@ textarea.form-control{resize:vertical;min-height:110px}
         </span>
       </div>
       <div class="mrow">
+        <span class="mlbl"></span>
+        <span class="mval">
+          <button onclick="location.href='/?edit={{ t.id }}'" style="background:rgba(200,144,64,.12);color:var(--yellow);border:1px solid rgba(200,144,64,.35);border-radius:7px;padding:.3rem .8rem;font-size:.78rem;font-weight:700;cursor:pointer;font-family:'Tajawal',sans-serif">✏️ تعديل تاريخ الإغلاق / المهندس</button>
+        </span>
+      </div>
+      <div class="mrow">
         <span class="mlbl">نوع الأعمال</span>
         <span class="mval">{{ t.business_type or '—' }}</span>
       </div>
@@ -2201,6 +2207,18 @@ function openEdit(id,t){
     }).catch(()=>toast('خطأ في التحميل',1));
   });
 }
+
+// ── فتح نافذة التعديل تلقائياً لو جاي رابط من صفحة التفاصيل (?edit=<id>) ──
+(function(){
+  const _p = new URLSearchParams(location.search);
+  const _eid = _p.get('edit');
+  if(_eid){
+    openEdit(parseInt(_eid,10), '');
+    const _u = new URL(location.href);
+    _u.searchParams.delete('edit');
+    history.replaceState({}, '', _u.pathname + _u.search);
+  }
+})();
 
   function toggleDateLock(){
     if(!cid)return;
