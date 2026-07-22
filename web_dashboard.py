@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Al-Rawaf Tender Monitor — Web Dashboard v2 (Redesigned)"""
-VERSION = "5.9.10"   # ← bump this on every deploy (prevents old-file regressions)
+VERSION = "5.9.11"   # ← bump this on every deploy (prevents old-file regressions)
 
 from flask import Flask, render_template_string, request, redirect, session, jsonify, abort, Response
 from company_profile import PROFILE
@@ -66,7 +66,7 @@ DASH_PWD = decrypt_val(os.getenv("DASHBOARD_PASSWORD", "change-me-in-.env"))  # 
 PORT     = int(os.getenv("DASHBOARD_PORT", "8080"))
 
 # ── Admin Control Panel ──────────────────────────────────────────
-ADMIN_EMAIL = "owner@example.com"          # owner's email — immutable gate
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "owner@example.com").strip().lower()  # per-tenant owner email
 ADMIN_PWD   = decrypt_val(os.getenv("ADMIN_PASSWORD", "change-me-in-.env"))  # FERNET: or plain -- decrypt_val handles both
 
 # ── Password recovery: owner's private Telegram DM (not the shared group CHAT_ID) ──
@@ -85,7 +85,7 @@ _ALLOWED_HOSTS = {'127.0.0.1', '::1', '::ffff:127.0.0.1'}
 def block_direct_ip_access():
     ip = request.remote_addr
     if ip not in _ALLOWED_HOSTS:
-        abort(403)  # Forbidden — use tender.example.com
+        abort(403)  # Forbidden — use your Cloudflare Tunnel domain
 
 # ── v5.6.3: انتهاء الجلسة بعد ساعتين من عدم النشاط ──
 SESSION_IDLE_SECONDS = int(os.getenv("SESSION_IDLE_SECONDS",
