@@ -2209,11 +2209,14 @@ function openEdit(id,t){
 }
 
 // ── فتح نافذة التعديل تلقائياً لو جاي رابط من صفحة التفاصيل (?edit=<id>) ──
+// ملحوظة: استدعاء openEdit() مؤجَّل عبر setTimeout عمداً -- لو اتنادى فوراً هنا
+// (قبل نهاية تنفيذ السكربت بالكامل) بيطلع خطأ TDZ حقيقي لأن requirePin() بيستخدم
+// "let _pinCb" المُعرَّفة لاحقاً أسفل الملف -- ثبتنا الخطأ ده فعلياً على السيرفر الحي.
 (function(){
   const _p = new URLSearchParams(location.search);
   const _eid = _p.get('edit');
   if(_eid){
-    openEdit(parseInt(_eid,10), '');
+    setTimeout(function(){ openEdit(parseInt(_eid,10), ''); }, 400);
     const _u = new URL(location.href);
     _u.searchParams.delete('edit');
     history.replaceState({}, '', _u.pathname + _u.search);

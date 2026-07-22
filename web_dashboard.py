@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Al-Rawaf Tender Monitor — Web Dashboard v2 (Redesigned)"""
-VERSION = "5.9.8"   # ← bump this on every deploy (prevents old-file regressions)
+VERSION = "5.9.10"   # ← bump this on every deploy (prevents old-file regressions)
 
 from flask import Flask, render_template_string, request, redirect, session, jsonify, abort, Response
 from company_profile import PROFILE
