@@ -2919,8 +2919,11 @@ def handle_trends(message):
 _lock_fd = None
 def acquire_lock():
     global _lock_fd
-    import tempfile
-    lock_file = os.path.join(tempfile.gettempdir(), "alrawaf_bot.lock")
+    import tempfile, hashlib
+    # اسم القفل مُشتق من مسار مجلد النسخة نفسها -- لو أكتر من مستأجر (tenant) شغّال
+    # على نفس السيرفر، كل نسخة تراقب نفسها بس، مش تصادم نسخة تانية في مجلد مختلف
+    _instance_id = hashlib.md5(str(BASE_DIR.resolve()).encode()).hexdigest()[:12]
+    lock_file = os.path.join(tempfile.gettempdir(), f"tender_bot_{_instance_id}.lock")
     try:
         if os.name == 'nt':
             import msvcrt
