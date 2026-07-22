@@ -25,7 +25,7 @@ CORE_FILES = [
     "export_in_progress.py", "health_check.py", "chat_handler.py", "pdf_report.py",
     "admin_templates.py", "dashboard_templates.py", "tts_text.py", "ai_assistant.py",
     "bp_engineer.py", "analytics_engine.py", "provision_instance.py",
-    "portal_adapter.py", "requirements.txt", "SETUP.md",
+    "portal_adapter.py", "company_profile.py", "requirements.txt", "SETUP.md",
 ]
 # ملفات تُنسخ كقوالب (placeholders) لا كنسخة الرواف الفعلية
 TEMPLATE_ONLY = [".env.example"]
