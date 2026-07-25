@@ -1,15 +1,26 @@
 import sqlite3
 import pandas as pd
+import os
 from pathlib import Path
 import logging
 import time
+from dotenv import load_dotenv
 
 logger = logging.getLogger("Reverse_Sync")
 
 # Paths
 ROOT_DIR = Path(__file__).parent.resolve()
 excel_path = ROOT_DIR / "output" / "Master_Tenders.xlsx"
-db_path = ROOT_DIR / "output" / "tenders.db"
+
+# كان db_path ثابتاً على output/tenders.db دائماً -- لا يحترم DB_PATH من
+# .env إطلاقاً (نفس فئة الخلل المصلحة في db_manager.py). لأي عميل له
+# DB_PATH مخصص (كل مستأجر الويزارد)، كانت المزامنة العكسية تكتب بصمت في
+# قاعدة فارغة لا يراها أي كود آخر، والتعديل اليدوي يختفي بصمت. الإنتاج
+# الحقيقي مافيشوش DB_PATH في .env أصلاً، فالسلوك القديم يفضل كما هو.
+load_dotenv(ROOT_DIR / ".env")
+db_path = Path(os.getenv("DB_PATH")) if os.getenv("DB_PATH", "").strip() else ROOT_DIR / "output" / "tenders.db"
+if not db_path.is_absolute():
+    db_path = ROOT_DIR / db_path
 
 REQUIRED_COLS = ["ID_النظام", "اسم المنافسة", "المهندس المسؤول"]
 
