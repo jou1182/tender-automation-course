@@ -9,14 +9,22 @@ from contextlib import contextmanager
 import logging
 import json
 import time
+from dotenv import load_dotenv
 
 logger = logging.getLogger("DB_Manager")
 
 BASE_DIR = Path(__file__).parent / "output"
+
+# هذا الملف قد يُستورد مباشرة (سكربت تشخيص يدوي، python -c "import db_manager"،
+# أو أي أداة في الكورس) قبل ما يُنفّذ مستدعيه أي load_dotenv() خاص به --
+# فلا يُفترض ترتيب الاستيراد في الملف المستدعي. override=False الافتراضي، فلا يؤثر
+# على التشغيل تحت systemd (المتغيرات مضبوطة مسبقاً عبر EnvironmentFile).
+load_dotenv(Path(__file__).parent / ".env")
+
 # DB_PATH يحترم متغير البيئة DB_PATH لو مضبوط (نفس نمط web_dashboard.py بالضبط) --
 # بدونه، أي كود بينادي DBManager() من غير مسار صريح (bot_daemon.py مثلاً) كان
 # بيفتح ملف مختلف تماماً عن الملف اللي جهّزه الويزارد أو provision_instance.py،
-# فيلاقي قاعدة فاضية بلا هوية الشركة. إنتاج الرواف الحقيقي مفيهوش DB_PATH في .env
+# فيلاقي قاعدة فاضية بلا هوية الشركة. الإنتاج الحقيقي مافيشوش DB_PATH في .env
 # أصلاً، فالسلوك القديم يفضل تماماً كما هو -- التعديل إضافي بحت.
 DB_PATH = Path(os.getenv("DB_PATH")) if os.getenv("DB_PATH", "").strip() else BASE_DIR / "tenders.db"
 
