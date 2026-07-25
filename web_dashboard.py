@@ -224,13 +224,15 @@ def ensure_app_config_table():
                 updated_at TEXT    DEFAULT (datetime('now'))
             )
         """)
+        # البذور تُقرأ من هوية الشركة -- لا أسماء مكتوبة حرفياً حتى لا تتسرب
+        # هوية شركة أخرى لأي مستأجر تنقصه مفاتيح app_config.
         defaults = [
-            ("company_name_ar", "شركة المقاولات النموذجية"),
-            ("company_name_en", "SAMPLE CONTRACTING"),
-            ("system_title",    "نظام متابعة المناقصات"),
-            ("system_subtitle", "لوحة متابعة المنافسات"),
-            ("footer_owner",    "Your Name"),
-            ("footer_url",      "https://example.com"),
+            ("company_name_ar", PROFILE.get("name_ar", "")),
+            ("company_name_en", PROFILE.get("name_en", "")),
+            ("system_title",    PROFILE.get("system_title", "")),
+            ("system_subtitle", PROFILE.get("system_subtitle", "لوحة متابعة المنافسات")),
+            ("footer_owner",    PROFILE.get("footer_owner", "")),
+            ("footer_url",      PROFILE.get("footer_url", "")),
             ("custom_logo_b64", ""),
         ]
         conn.executemany(

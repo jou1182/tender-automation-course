@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Al-Rawaf Monthly PDF Report Generator
+Monthly PDF Report Generator
 يولّد تقرير PDF احترافي ويرسله عبر التيليغرام
 يُستدعى من bot_daemon.py في أول كل شهر
 """
@@ -159,7 +159,9 @@ def generate_pdf(month: datetime = None) -> bytes:
     story = []
 
     # ── Title Block ───────────────────────────────────
-    story.append(Paragraph("🏗️  نظام الرواف لمتابعة المنافسات", sty(20, bold=True, color=C_BLUE, align="CENTER")))
+    from company_profile import PROFILE as _co
+    _co_title = (_co.get("system_title") or "").strip() or "نظام متابعة المنافسات"
+    story.append(Paragraph(f"🏗️  {_co_title} — متابعة المنافسات", sty(20, bold=True, color=C_BLUE, align="CENTER")))
     story.append(Spacer(1, 0.3*cm))
     story.append(Paragraph(title_str, sty(14, color=C_MUTED, align="CENTER")))
     story.append(Paragraph(f"تاريخ الإصدار: {datetime.now().strftime('%Y-%m-%d')}", sty(9, color=C_MUTED, align="CENTER")))
@@ -259,7 +261,7 @@ def generate_pdf(month: datetime = None) -> bytes:
     story.append(HRFlowable(width="100%", thickness=0.5, color=C_HEADER))
     story.append(Spacer(1, 0.2*cm))
     story.append(Paragraph(
-        f"نظام الرواف V5.3 — تم الإنشاء تلقائياً بتاريخ {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        f"{_co_title} — تم الإنشاء تلقائياً بتاريخ {datetime.now().strftime('%Y-%m-%d %H:%M')}",
         sty(8, color=C_MUTED, align="CENTER")
     ))
 
@@ -276,7 +278,9 @@ def send_monthly_report(bot, chat_id: str, month: datetime = None):
             1:"يناير",2:"فبراير",3:"مارس",4:"أبريل",5:"مايو",6:"يونيو",
             7:"يوليو",8:"أغسطس",9:"سبتمبر",10:"أكتوبر",11:"نوفمبر",12:"ديسمبر"
         }.get(month_now.month, str(month_now.month))
-        filename = f"AlRawaf_Report_{month_now.strftime('%Y-%m')}.pdf"
+        from company_profile import PROFILE as _co
+        _co_file = "".join(c for c in (_co.get("name_en") or "Tender").split()[0] if c.isalnum()) or "Tender"
+        filename = f"{_co_file}_Report_{month_now.strftime('%Y-%m')}.pdf"
         caption  = (
             f"📄 *التقرير الشهري — {month_name_ar} {month_now.year}*\n"
             "━━━━━━━━━━━━\n"

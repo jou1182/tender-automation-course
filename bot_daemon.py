@@ -14,6 +14,12 @@ from dotenv import load_dotenv
 from db_manager import DBManager, DB_PATH
 from security_vault import decrypt_val
 from company_profile import PROFILE
+
+# هوية الشركة في كل نصوص البوت -- تُقرأ من company_profile.json حتى لا يظهر
+# اسم شركة أخرى لدى أي عميل. القيم الاحتياطية محايدة عمداً.
+CO_SHORT = (PROFILE.get("short_ar") or "").strip() or "شركتنا"
+CO_SYSTEM = (PROFILE.get("system_title") or "").strip() or "نظام متابعة المنافسات"
+CO_TEAM = (PROFILE.get("team_ar") or "").strip() or "فريق المتابعة"
 try:
     from pdf_report import send_monthly_report as _send_pdf
     PDF_OK = True
@@ -53,7 +59,7 @@ WHISPER_MODEL   = "whisper-1"
 # يُمرَّر لـ Whisper كـ prompt حتى يتعرف على مصطلحات المجال
 # هذا يرفع دقة التفريغ بشكل كبير للأسماء والمصطلحات المتخصصة
 WHISPER_DOMAIN_PROMPT = (
-    "المناقصات الحكومية السعودية، منصة الرواف، شركة الرواف، "
+    f"المناقصات الحكومية السعودية، شركة {CO_SHORT}، "
     "العروض الفنية، الضمان الابتدائي، تاريخ التقديم، كراسة الشروط، "
     "الترسية، طرح المناقصة، العطاء، الجهة المالكة، المقاول، الاستشاري، "
     "أمانة الرياض، أمانة جدة، أمانة مكة، وزارة النقل، وزارة الإسكان، "
@@ -221,7 +227,7 @@ def build_health_report():
     auto_login_text = "مفعّل" if ALLOW_AUTONOMOUS_LOGIN else "مغلق لحماية MFA"
 
     return (
-        "🩺 *فحص صحة نظام الرواف*\n"
+        f"🩺 *فحص صحة {CO_SYSTEM}*\n"
         "━━━━━━━━━━━━━━\n"
         f"الحالة: *{paused_text}*\n"
         f"آخر فحص: `{fmt_ts(state.get('last_check_at'))}`\n"
@@ -232,7 +238,7 @@ def build_health_report():
         f"المنافسات النشطة: *{stats.get('active_count', '؟')}*\n"
         f"المعلقات: *{stats.get('pending_count', '؟')}*\n"
         f"المغلقة: *{stats.get('closed_count', '؟')}*\n\n"
-        f"جلسة الرواف: *{session_ok}* (`{export_status}`)\n"
+        f"جلسة المنصة: *{session_ok}* (`{export_status}`)\n"
         f"الدخول التلقائي لمايكروسوفت: *{auto_login_text}*\n"
         f"ملف الكوكيز: {file_status(BASE_DIR / 'output' / 'portal_cookies.json')}\n"
         f"قاعدة البيانات: {file_status(DB_PATH)}\n"
@@ -251,10 +257,9 @@ def send_session_expired_alert():
             pass  # If we can't check age, re-send to be safe
 
     err_msg = (
-        "⚠️ *جلسة موقع الرواف تحتاج تجديد يدوي*\n\n"
-        "وصل أمر الفحص، لكن السيرفر لا يملك جلسة دخول صالحة حالياً لمنصة الرواف.\n\n"
-        "من جهازك شغّل:\n"
-        "`D:\\in_progress_tender\\V4_Super_System\\AlRawaf_Update_Session.bat`\n\n"
+        "⚠️ *جلسة دخول المنصة تحتاج تجديد يدوي*\n\n"
+        "وصل أمر الفحص، لكن السيرفر لا يملك جلسة دخول صالحة حالياً للمنصة.\n\n"
+        "من جهاز المشغّل حدّث جلسة الدخول (سكربت تحديث الجلسة الخاص بمنصتك).\n\n"
         "بعد اكتمال التحديث أرسل /news مرة أخرى."
     )
     bot.send_message(CHAT_ID, err_msg, parse_mode="Markdown")
@@ -297,11 +302,10 @@ def job_cookie_reminder():
     if age_days < 6:
         return
     msg = (
-        "🔑 *تذكير: تجديد جلسة موقع الرواف*\n"
+        "🔑 *تذكير: تجديد جلسة دخول المنصة*\n"
         "━━━━━━━━━━━━━━\n"
         f"آخر تحديث للجلسة كان منذ *{int(age_days)} أيام*.\n\n"
-        "للحفاظ على استمرارية المراقبة، شغّل من جهازك:\n"
-        "`AlRawaf_Update_Session.bat`\n\n"
+        "للحفاظ على استمرارية المراقبة، حدّث جلسة الدخول من جهاز المشغّل.\n\n"
         "_(يُنصح بالتجديد قبل أن تصل إلى 7 أيام)_"
     )
     bot.send_message(CHAT_ID, msg, parse_mode="Markdown")
@@ -560,8 +564,8 @@ def notify_pending_changes():
 def build_news_clear_message():
     return (
         "✅ لا توجد أي منافسات جديدة أو منافسات تم تغيير تاريخ التقديم حتى هذه اللحظة.\n\n"
-        "اطمئن، منصة الرواف وقاعدة البيانات متطابقتان الآن.\n\n"
-        "💚 صنع بكل حب من فريق العروض الفنية بشركة الرواف"
+        "اطمئن، المنصة وقاعدة البيانات متطابقتان الآن.\n\n"
+        f"💚 صنع بكل حب من {CO_TEAM} — {CO_SHORT}"
     )
 
 def run_manual_list_report(chat_id):
@@ -572,13 +576,13 @@ def run_manual_list_report(chat_id):
     try:
         logger.info(f"Manual /list command received from chat_id={chat_id}")
         import pandas as pd
-        import export_in_progress
+        import portal_adapter
 
-        ok = export_in_progress.main()
+        ok = portal_adapter.get_active_portal().fetch_to_file()
         if not ok:
             bot.send_message(
                 chat_id,
-                "⚠️ لم أتمكن من تحديث قائمة منصة الرواف الآن. غالباً الجلسة تحتاج تحديث عبر `AlRawaf_Update_Session.bat`.",
+                "⚠️ لم أتمكن من تحديث قائمة المنصة الآن. تأكد من مصدر البيانات (جلسة الدخول أو ملف الإدخال اليدوي).",
                 parse_mode="Markdown"
             )
             return
@@ -596,9 +600,9 @@ def run_manual_list_report(chat_id):
 
         match_text = "✅ متطابقان" if portal_count == db_count else "⚠️ يوجد فرق يحتاج مراجعة"
         msg = (
-            "📋 *قائمة منافسات الرواف الحالية*\n"
+            f"📋 *قائمة منافسات {CO_SHORT} الحالية*\n"
             "━━━━━━━━━━━━━━\n"
-            f"منصة الرواف: *{portal_count}* منافسة\n"
+            f"المنصة: *{portal_count}* منافسة\n"
             f"قاعدة البيانات: *{db_count}* منافسة نشطة\n"
             f"الحالة: *{match_text}*\n"
             f"طلبات بانتظار الاعتماد: *{pending_count}*\n\n"
@@ -715,7 +719,7 @@ def run_manual_news_check(chat_id):
             save_state(last_manual_news_result="session_failed")
             bot.send_message(
                 chat_id,
-                "⚠️ لم أتمكن من فحص منصة الرواف الآن لأن الجلسة تحتاج تجديد. راجع /health للتفاصيل.",
+                "⚠️ لم أتمكن من فحص المنصة الآن لأن الجلسة تحتاج تجديد. راجع /health للتفاصيل.",
                 parse_mode="Markdown"
             )
             return
@@ -729,7 +733,7 @@ def run_manual_news_check(chat_id):
         if staged_count > 0 or notified_count > 0:
             bot.send_message(
                 chat_id,
-                f"🚨 تم فحص منصة الرواف.\n\nتم العثور على ({max(staged_count, notified_count)}) تحديث يحتاج مراجعتك، وأرسلت لك تفاصيله الآن.",
+                f"🚨 تم فحص المنصة.\n\nتم العثور على ({max(staged_count, notified_count)}) تحديث يحتاج مراجعتك، وأرسلت لك تفاصيله الآن.",
                 parse_mode="Markdown"
             )
         else:
@@ -749,8 +753,8 @@ def run_manual_news_check(chat_id):
 @bot.message_handler(commands=['start', 'help'])
 def handle_start(message):
     if not is_authorized(message): return
-    bot.send_message(message.chat.id, "👋 أهلاً بك في نظام الرواف لإدارة المناقصات.\n\n"
-                                      "استخدم /news لفحص منصة الرواف الآن.\n"
+    bot.send_message(message.chat.id, f"👋 أهلاً بك في {CO_SYSTEM} لإدارة المناقصات.\n\n"
+                                      "استخدم /news لفحص المنصة الآن.\n"
                                       "استخدم /list لعرض عدد منافسات المنصة وقاعدة البيانات.\n"
                                       "استخدم /list_d لتحميل جدول المنافسات بالتفصيل.\n"
                                       "استخدم /pending لعرض طلبات الاعتماد العالقة.\n"
@@ -1270,13 +1274,13 @@ def handle_predict(message):
 def handle_news(message):
     if not is_authorized(message): return
     logger.info(f"Manual /news command received from chat_id={message.chat.id}")
-    bot.send_message(message.chat.id, "🔎 حاضر، سأفحص منصة الرواف الآن وأقارنها بقاعدة البيانات...")
+    bot.send_message(message.chat.id, "🔎 حاضر، سأفحص المنصة الآن وأقارنها بقاعدة البيانات...")
     threading.Thread(target=run_manual_news_check, args=(message.chat.id,), daemon=True).start()
 
 @bot.message_handler(commands=['list'])
 def handle_list(message):
     if not is_authorized(message): return
-    bot.send_message(message.chat.id, "📋 حاضر، سأحدّث قائمة منصة الرواف وأقارنها بقاعدة البيانات...")
+    bot.send_message(message.chat.id, "📋 حاضر، سأحدّث قائمة المنصة وأقارنها بقاعدة البيانات...")
     threading.Thread(target=run_manual_list_report, args=(message.chat.id,), daemon=True).start()
 
 @bot.message_handler(commands=['list_d'])
@@ -1309,7 +1313,7 @@ def handle_stats(message):
         bot.send_message(message.chat.id, "❌ فشل جلب الإحصائيات.")
         return
     
-    msg = (f"📊 *إحصائيات نظام الرواف*\n"
+    msg = (f"📊 *إحصائيات {CO_SYSTEM}*\n"
            f"━━━━━━━━━━━━━━\n"
            f"🟢 نشطة: {stats['active_count']}\n"
            f"🟡 معلقة: {stats['pending_count']}\n"
@@ -1349,7 +1353,7 @@ def handle_test(message):
     bot.send_message(
         message.chat.id,
         "🧪 *اختبار إشعار فقط - لا يؤثر على قاعدة البيانات*\n\n"
-        "هذه رسالة تجربة من بوت الرواف. لم يتم إنشاء pending، ولم يتم تعديل قاعدة البيانات، ولا يوجد إجراء مطلوب.",
+        "هذه رسالة تجربة من البوت. لم يتم إنشاء pending، ولم يتم تعديل قاعدة البيانات، ولا يوجد إجراء مطلوب.",
         parse_mode="Markdown"
     )
 
@@ -1365,7 +1369,7 @@ def handle_lastlog(message):
 def handle_pause(message):
     if not is_authorized(message): return
     save_state(paused=True, paused_at=utc_now_iso(), paused_by=getattr(message.from_user, "id", "telegram"))
-    bot.send_message(message.chat.id, "⏸️ تم إيقاف مزامنة موقع الرواف مؤقتاً. النسخ الاحتياطية وأوامر تيليجرام ستبقى تعمل.")
+    bot.send_message(message.chat.id, "⏸️ تم إيقاف مزامنة المنصة مؤقتاً. النسخ الاحتياطية وأوامر تيليجرام ستبقى تعمل.")
 
 @bot.message_handler(commands=['resume'])
 def handle_resume(message):
@@ -2693,7 +2697,7 @@ def job_morning_briefing():
         if pending_count > 0:
             msg += f"\n🟡 *بانتظار اعتمادك: {pending_count} طلب* — /pending\n"
 
-        msg += "\n💚 _فريق العروض الفنية — الرواف_"
+        msg += f"\n💚 _{CO_TEAM} — {CO_SHORT}_"
 
         bot.send_message(CHAT_ID, msg, parse_mode="Markdown")
         logger.info(f"Morning briefing sent: today={len(due_today)}, tomorrow={len(due_tomorrow)}, overdue={len(overdue)}, pending={pending_count}")
@@ -2954,7 +2958,7 @@ def acquire_lock():
 # ============================================================
 if __name__ == "__main__":
     acquire_lock()
-    logger.info("Starting Al-Rawaf V4 - Professional Edition...")
+    logger.info("Starting Tender Bot Daemon - Professional Edition...")
     logger.info(f"Logs are being saved to: {LOG_DIR}")
 
     # Start background scheduler

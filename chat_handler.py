@@ -490,7 +490,7 @@ def _total_stats(db_path) -> str:
     urgency_line = f"\n⚡ تغلق خلال 7 أيام: *{urgent}*" if urgent > 0 else ""
 
     return (
-        f"📊 *إجمالي منافسات الرواف:*\n"
+        f"📊 *إجمالي المنافسات:*\n"
         f"━━━━━━━━━━━━━━\n"
         f"🟢 نشطة: *{active}*\n"
         f"⚪ مغلقة: *{closed}*\n"
