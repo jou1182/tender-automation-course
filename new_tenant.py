@@ -2,7 +2,7 @@
 """new_tenant.py — أنشئ نسخة معزولة كاملة لعميل جديد (نموذج "نسخ معزولة").
 
 كل عميل يحصل على: مجلد مستقل + قاعدة بيانات فارغة + ملفَي systemd جاهزين
-للنشر + منفذ محجوز له وحده. لا يلمس هذا السكريبت نظام الرواف الحي إطلاقاً —
+للنشر + منفذ محجوز له وحده. لا يلمس هذا السكريبت النظام الحي الأصلي إطلاقاً —
 عمليات ملفات محلية فقط، بلا SSH وبلا تشغيل أي خدمة.
 
 الاستخدام:
@@ -27,7 +27,7 @@ CORE_FILES = [
     "bp_engineer.py", "analytics_engine.py", "provision_instance.py",
     "portal_adapter.py", "company_profile.py", "requirements.txt", "SETUP.md",
 ]
-# ملفات تُنسخ كقوالب (placeholders) لا كنسخة الرواف الفعلية
+# ملفات تُنسخ كقوالب (placeholders) لا كنسخة الشركة الأصلية الفعلية
 TEMPLATE_ONLY = [".env.example"]
 
 
@@ -132,7 +132,7 @@ def main():
             shutil.copy2(src, target / f)
     print(f"  [OK] .env.example نُسخ (يحتاج تعديل يدوي قبل التشغيل)")
 
-    # ── ملف هوية جديد فارغ القيم الحساسة (لا بيانات الرواف) ──
+    # ── ملف هوية جديد فارغ القيم الحساسة (بلا بيانات الشركة الأصلية) ──
     fresh_profile = {
         "_comment": "ملف هوية هذا المستأجر — عدّله بالكامل قبل أي تشغيل حقيقي.",
         "name_ar": args.name, "name_en": args.name.upper(),
@@ -150,7 +150,7 @@ def main():
     }
     (target / "company_profile.json").write_text(
         json.dumps(fresh_profile, ensure_ascii=False, indent=2), encoding="utf-8")
-    print("  [OK] company_profile.json فارغ القيم أُنشئ (لا بيانات الرواف)")
+    print("  [OK] company_profile.json فارغ القيم أُنشئ (بلا بيانات الشركة الأصلية)")
 
     # ── قوالب systemd (نصوص محلية فقط — لا نشر تلقائي) ──
     py_exe = f"{target}/venv/bin/python3.12"
