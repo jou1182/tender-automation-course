@@ -61,6 +61,12 @@ if not _secret:
         _secret = _secret or secrets.token_hex(32)
 app.secret_key = _secret
 
+# مسار .env الحقيقي لهذه النسخة -- يُستخدم للقراءة (fallback فقط لو DB_PATH غير مضبوط) وللكتابة في
+# مسارات استعادة/تغيير كلمات المرور أدناه -- دائماً مجلد هذا الملف نفسه،
+# مش مسار /opt/elrawaf-tender مكتوب حرفياً بالخطأ (كان بيخلي أي مستأجر/ديمو
+# يكتب فوق إعدادات الإنتاج الحقيقي بدل إعداداته الخاصة عند استعادة كلمة المرور).
+ENV_PATH = str(Path(__file__).parent / ".env")
+
 DB_PATH  = Path(os.getenv("DB_PATH", "/opt/elrawaf-tender/output/tenders.db"))
 DASH_PWD = decrypt_val(os.getenv("DASHBOARD_PASSWORD", "change-me-in-.env"))  # FERNET: or plain -- decrypt_val handles both
 PORT     = int(os.getenv("DASHBOARD_PORT", "8080"))
@@ -348,7 +354,7 @@ def login():
         ip = _client_ip()
         if _login_blocked(ip):
             error = _LOCKOUT_MSG
-        elif hmac.compare_digest(request.form.get("password", ""), DASH_PWD):
+        elif hmac.compare_digest(request.form.get("password", "").encode("utf-8"), DASH_PWD.encode("utf-8")):
             _login_succeeded(ip)
             session["ok"] = True
             return redirect("/")
@@ -406,7 +412,7 @@ def dash_forgot():
             elif new_pwd != new_pwd2:
                 error = "كلمتا المرور غير متطابقتين"
             else:
-                env_path = "/opt/elrawaf-tender/.env"
+                env_path = ENV_PATH
                 try:
                     with open(env_path, "r", encoding="utf-8") as ef:
                         lines_ = ef.readlines()
@@ -449,7 +455,7 @@ def admin_login():
         apwd  = request.form.get("apwd", "").strip()
         if _login_blocked(ip):
             error = _LOCKOUT_MSG
-        elif email == ADMIN_EMAIL.lower() and hmac.compare_digest(apwd, ADMIN_PWD):
+        elif email == ADMIN_EMAIL.lower() and hmac.compare_digest(apwd.encode("utf-8"), ADMIN_PWD.encode("utf-8")):
             _login_succeeded(ip)
             session["admin_ok"] = True
             return redirect("/admin")
@@ -500,7 +506,7 @@ def admin_forgot():
             elif new_pwd != new_pwd2:
                 error = "كلمتا المرور غير متطابقتين"
             else:
-                env_path = "/opt/elrawaf-tender/.env"
+                env_path = ENV_PATH
                 try:
                     with open(env_path, 'r', encoding='utf-8') as ef:
                         lines = ef.readlines()
@@ -606,7 +612,7 @@ def admin_change_password():
         return jsonify({"ok": False, "msg": "كلمة المرور قصيرة (6 أحرف على الأقل)"})
     if new_pwd != new_pwd2:
         return jsonify({"ok": False, "msg": "كلمتا المرور غير متطابقتين"})
-    env_path = "/opt/elrawaf-tender/.env"
+    env_path = ENV_PATH
     try:
         with open(env_path, 'r', encoding='utf-8') as ef:
             lines = ef.readlines()
@@ -638,7 +644,7 @@ def admin_change_admin_password():
         return jsonify({"ok": False, "msg": "كلمة المرور الجديدة قصيرة (8 أحرف على الأقل)"})
     if new_pwd != new_pwd2:
         return jsonify({"ok": False, "msg": "كلمتا المرور غير متطابقتين"})
-    env_path = "/opt/elrawaf-tender/.env"
+    env_path = ENV_PATH
     try:
         with open(env_path, 'r', encoding='utf-8') as ef:
             lines = ef.readlines()
