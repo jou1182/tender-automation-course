@@ -485,7 +485,9 @@ def admin_forgot():
                 code = _new_reset_code(token)
                 ok = _send_telegram_dm(
                     OWNER_TELEGRAM_ID,
-                    f"🔐 كود استعادة كلمة مرور المشرف: {code}\nصالح لمدة 10 دقائق. تجاهل الرسالة إن لم تطلبها.",
+                    f"🔐 كود استعادة كلمة مرور المشرف: {code}\n"
+                    f"البريد المسجّل: {ADMIN_EMAIL}\n"
+                    "صالح لمدة 10 دقائق. تجاهل الرسالة إن لم تطلبها.",
                 )
                 if ok:
                     sent = True
