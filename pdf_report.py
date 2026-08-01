@@ -36,7 +36,14 @@ C_BLUE   = HexColor("#58a6ff") if REPORTLAB_OK else None
 C_TEXT   = HexColor("#e6edf3") if REPORTLAB_OK else None
 C_MUTED  = HexColor("#8b949e") if REPORTLAB_OK else None
 
-DB_PATH = BASE_DIR / "output" / "tenders.db"
+# كان db_path ثابتاً دائماً -- لا يحترم DB_PATH من .env إطلاقاً (نفس فئة
+# الخلل المصلحة في db_manager.py/reverse_sync_to_sql.py). لأي مستأجر
+# له DB_PATH مخصص، كان التقرير الشهري يُفتح قاعدة فارغة لا تحوي 
+# master_tenders فينهار بـ "no such table: master_tenders". الإنتاج الحقيقي
+# مافيشوش DB_PATH في .env أصلاً، فالسلوك القديم يفضل تماماً كما هو.
+DB_PATH = Path(os.getenv("DB_PATH")) if os.getenv("DB_PATH", "").strip() else BASE_DIR / "output" / "tenders.db"
+if not DB_PATH.is_absolute():
+    DB_PATH = BASE_DIR / DB_PATH
 
 
 def _get_report_data(month_start: datetime, month_end: datetime) -> dict:

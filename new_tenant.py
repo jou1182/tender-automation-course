@@ -29,6 +29,11 @@ CORE_FILES = [
 ]
 # ملفات تُنسخ كقوالب (placeholders) لا كنسخة الشركة الأصلية الفعلية
 TEMPLATE_ONLY = [".env.example"]
+# ملفات خطوط Tajawal التي يحتاجها pdf_report.py -- كانت مفقودة من قوائم
+# النسخ في كل المولّدين/الويزارد، فكان أي عميل جديد يواجه مربعات
+# فارغة بدل نص عربي في التقرير الشهري. نسخ انتقائي (.ttf فقط) لا مجلد AI/
+# كاملاً لأن ذلك المجلد محلياً يحوي أيضاً ملفات شخصية غير متعلقة (~9.5MB).
+CORE_FONT_FILES = ["AI/Tajawal-Regular.ttf", "AI/Tajawal-Bold.ttf"]
 
 
 def _slug(name: str) -> str:
@@ -131,6 +136,18 @@ def main():
         if src.exists():
             shutil.copy2(src, target / f)
     print(f"  [OK] .env.example نُسخ (يحتاج تعديل يدوي قبل التشغيل)")
+
+    (target / "AI").mkdir(exist_ok=True)
+    font_copied = 0
+    for f in CORE_FONT_FILES:
+        src = BASE / f
+        if src.exists():
+            shutil.copy2(src, target / f)
+            font_copied += 1
+    if font_copied:
+        print(f"  [OK] خط Tajawal نُسخ ({font_copied}/{len(CORE_FONT_FILES)} ملفات -- للتقارير الشهرية)")
+    else:
+        print(f"  [!] ملفات Tajawal غير موجودة محلياً -- تقارير هذا العميل ستظهر بخط غير عربي")
 
     # ── ملف هوية جديد فارغ القيم الحساسة (بلا بيانات الشركة الأصلية) ──
     fresh_profile = {
