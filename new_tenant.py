@@ -33,7 +33,9 @@ TEMPLATE_ONLY = [".env.example"]
 # النسخ في كل المولّدين/الويزارد، فكان أي عميل جديد يواجه مربعات
 # فارغة بدل نص عربي في التقرير الشهري. نسخ انتقائي (.ttf فقط) لا مجلد AI/
 # كاملاً لأن ذلك المجلد محلياً يحوي أيضاً ملفات شخصية غير متعلقة (~9.5MB).
-CORE_FONT_FILES = ["AI/Tajawal-Regular.ttf", "AI/Tajawal-Bold.ttf"]
+# Amiri مختار هنا لأن pdf_report.py يستخدمه تحديداً -- Tajawal (المستخدم في
+# الويب/الداشبورد) لا يغطي أشكال العرض التقليدية اللازمة لـ reportlab كاملة.
+CORE_FONT_FILES = ["AI/Amiri-Regular.ttf", "AI/Amiri-Bold.ttf"]
 
 
 def _slug(name: str) -> str:

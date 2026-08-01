@@ -13,6 +13,13 @@ BASE_DIR = Path(__file__).parent
 load_dotenv(BASE_DIR / ".env")
 
 try:
+    import arabic_reshaper
+    from bidi.algorithm import get_display
+    ARABIC_SHAPING_OK = True
+except ImportError:
+    ARABIC_SHAPING_OK = False
+
+try:
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.units import cm
@@ -44,6 +51,24 @@ C_MUTED  = HexColor("#8b949e") if REPORTLAB_OK else None
 DB_PATH = Path(os.getenv("DB_PATH")) if os.getenv("DB_PATH", "").strip() else BASE_DIR / "output" / "tenders.db"
 if not DB_PATH.is_absolute():
     DB_PATH = BASE_DIR / DB_PATH
+
+
+def ar(text) -> str:
+    """reportlab لا يطبّق خوارزمية Unicode (BiDi) ولا يصل الحروف العربية
+    تلقائياً -- فيرسمها بالترتيب الحرفي الخام المدخل، مما يظهر معكوساً.
+    هذه الدالة تعيد الوصل (arabic_reshaper) ثم ترتّب بصرياً للعرض (python-bidi)
+    -- يجب تطبيقها على أي نص يمر لـ Paragraph/Table قبل التمرير مباشرة في reportlab.
+    آمنة على النص الإنجليزي/الأرقام الصرفة (bidi لا يغيّرها).
+    """
+    if not text:
+        return text
+    text = str(text)
+    if not ARABIC_SHAPING_OK:
+        return text
+    try:
+        return get_display(arabic_reshaper.reshape(text))
+    except Exception:
+        return text
 
 
 def _get_report_data(month_start: datetime, month_end: datetime) -> dict:
@@ -126,10 +151,14 @@ def generate_pdf(month: datetime = None) -> bytes:
     title_str = f"تقرير شهر {month_name_ar} {month_start.year}"
 
     # ── Register Arabic font ──────────────────────────
-    font_path = BASE_DIR / "AI" / "Tajawal-Regular.ttf"
-    font_bold = BASE_DIR / "AI" / "Tajawal-Bold.ttf"
-    font_name = "Tajawal"
-    font_bold_name = "Tajawal-Bold"
+    # Amiri مختار هنا عمداً بدل Tajawal (المستخدم في الويب/الداشبورد) -- reportlab لا يطبّق
+    # تشكيل OpenType (GSUB) حقيقياً، فنعتمد على arabic_reshaper الذي يُخرج codepoints أشكال
+    # العرض التقليدية (Presentation Forms) -- Tajawal لا يغطيها إلا جزئياً (89 من ~200)،
+    # فيظهر مربعات فارغة لأحرف أساسية. Amiri يغطيها كاملة (140/140).
+    font_path = BASE_DIR / "AI" / "Amiri-Regular.ttf"
+    font_bold = BASE_DIR / "AI" / "Amiri-Bold.ttf"
+    font_name = "Amiri"
+    font_bold_name = "Amiri-Bold"
 
     # Fallback to system fonts if Tajawal not available
     if font_path.exists():
@@ -168,20 +197,20 @@ def generate_pdf(month: datetime = None) -> bytes:
     # ── Title Block ───────────────────────────────────
     from company_profile import PROFILE as _co
     _co_title = (_co.get("system_title") or "").strip() or "نظام متابعة المنافسات"
-    story.append(Paragraph(f"🏗️  {_co_title} — متابعة المنافسات", sty(20, bold=True, color=C_BLUE, align="CENTER")))
+    story.append(Paragraph(ar(f"🏗️  {_co_title} — متابعة المنافسات"), sty(20, bold=True, color=C_BLUE, align="CENTER")))
     story.append(Spacer(1, 0.3*cm))
-    story.append(Paragraph(title_str, sty(14, color=C_MUTED, align="CENTER")))
-    story.append(Paragraph(f"تاريخ الإصدار: {datetime.now().strftime('%Y-%m-%d')}", sty(9, color=C_MUTED, align="CENTER")))
+    story.append(Paragraph(ar(title_str), sty(14, color=C_MUTED, align="CENTER")))
+    story.append(Paragraph(ar(f"تاريخ الإصدار: {datetime.now().strftime('%Y-%m-%d')}"), sty(9, color=C_MUTED, align="CENTER")))
     story.append(Spacer(1, 0.5*cm))
     story.append(HRFlowable(width="100%", thickness=1, color=C_HEADER))
     story.append(Spacer(1, 0.5*cm))
 
     # ── Summary Stats ─────────────────────────────────
-    story.append(Paragraph("ملخص الشهر", sty(13, bold=True, color=C_BLUE)))
+    story.append(Paragraph(ar("ملخص الشهر"), sty(13, bold=True, color=C_BLUE)))
     story.append(Spacer(1, 0.3*cm))
 
     stats_data = [
-        ["المنافسات النشطة", "جديدة هذا الشهر", "أُغلقت هذا الشهر", "فزنا", "خسرنا"],
+        [ar("المنافسات النشطة"), ar("جديدة هذا الشهر"), ar("أُغلقت هذا الشهر"), ar("فزنا"), ar("خسرنا")],
         [str(data["active"]), str(data["new_month"]), str(data["closed_month"]),
          str(data["won"]), str(data["lost"])],
     ]
@@ -205,14 +234,14 @@ def generate_pdf(month: datetime = None) -> bytes:
     story.append(Spacer(1, 0.7*cm))
 
     # ── Engineer Load ─────────────────────────────────
-    story.append(Paragraph("حمل المهندسين", sty(13, bold=True, color=C_BLUE)))
+    story.append(Paragraph(ar("حمل المهندسين"), sty(13, bold=True, color=C_BLUE)))
     story.append(Spacer(1, 0.3*cm))
 
-    eng_data = [["المهندس", "المنافسات المُسنَدة", "الطاقة", "نسبة الحمل"]]
+    eng_data = [[ar("المهندس"), ar("المنافسات المُسنَدة"), ar("الطاقة"), ar("نسبة الحمل")]]
     for e in data["engineers"]:
         cap  = max(e["capacity"] or 5, 1)
         pct  = min(round(e["tender_count"] / cap * 100), 100)
-        eng_data.append([e["name"], str(e["tender_count"]), str(cap), f"{pct}%"])
+        eng_data.append([ar(e["name"]), str(e["tender_count"]), str(cap), f"{pct}%"])
 
     et = Table(eng_data, colWidths=[5*cm, 4*cm, 3*cm, 3*cm])
     et.setStyle(TableStyle([
@@ -233,10 +262,10 @@ def generate_pdf(month: datetime = None) -> bytes:
 
     # ── Upcoming Deadlines ────────────────────────────
     if data["upcoming"]:
-        story.append(Paragraph("المواعيد القادمة (30 يوماً)", sty(13, bold=True, color=C_BLUE)))
+        story.append(Paragraph(ar("المواعيد القادمة (30 يوماً)"), sty(13, bold=True, color=C_BLUE)))
         story.append(Spacer(1, 0.3*cm))
 
-        up_data = [["اسم المنافسة", "تاريخ الإغلاق", "المهندس"]]
+        up_data = [[ar("اسم المنافسة"), ar("تاريخ الإغلاق"), ar("المهندس")]]
         for u in data["upcoming"]:
             try:
                 days = (datetime.strptime(u["submission_date"][:10], "%Y-%m-%d").date()
@@ -245,7 +274,7 @@ def generate_pdf(month: datetime = None) -> bytes:
             except Exception:
                 days_str = u["submission_date"] or "—"
             title_short = (u["title"] or "")[:40] + ("…" if len(u["title"] or "") > 40 else "")
-            up_data.append([title_short, days_str, u["assigned_engineer"] or "—"])
+            up_data.append([ar(title_short), ar(days_str), ar(u["assigned_engineer"] or "—")])
 
         ut = Table(up_data, colWidths=[8*cm, 5*cm, 3*cm])
         ut.setStyle(TableStyle([
@@ -268,7 +297,7 @@ def generate_pdf(month: datetime = None) -> bytes:
     story.append(HRFlowable(width="100%", thickness=0.5, color=C_HEADER))
     story.append(Spacer(1, 0.2*cm))
     story.append(Paragraph(
-        f"{_co_title} — تم الإنشاء تلقائياً بتاريخ {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        ar(f"{_co_title} — تم الإنشاء تلقائياً بتاريخ {datetime.now().strftime('%Y-%m-%d %H:%M')}"),
         sty(8, color=C_MUTED, align="CENTER")
     ))
 
